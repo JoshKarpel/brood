@@ -1,0 +1,19 @@
+commands:
+  - command: "echo timer ; mkdir -p /tmp/foobar ; echo foo > /tmp/foobar/test"
+    tag: "restart"
+    prefix_style: "green"
+
+  - command: "echo watcher"
+    tag: "watch"
+    prefix_style: "blue"
+    starter:
+      type: "watch"
+      paths: ["/tmp/foobar"]
+
+  - command: "echo start; sleep 10; echo done"
+    tag: "long"
+    prefix_style: "cyan"
+    starter:
+      type: "watch"
+      paths: ["/tmp/foobar"]
+      allow_multiple: false

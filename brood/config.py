@@ -7,10 +7,10 @@ from typing import Any, ClassVar, Dict, List, Literal, Set, Union
 import rtoml
 import yaml
 from identify import identify
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 
 from brood.command import CommandConfig
-from brood.renderer import LogRendererConfig, NullRenderer, NullRendererConfig
+from brood.renderer import LogRendererConfig, NullRendererConfig
 
 JSONDict = Dict[str, Any]
 

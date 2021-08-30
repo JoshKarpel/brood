@@ -1,5 +1,0 @@
-commands:
-  - command: "echo timer"
-    tag: "echo"
-    prefix_style: "green"
-    restart_delay: 1

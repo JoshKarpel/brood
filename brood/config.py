@@ -1,14 +1,17 @@
-import json
+from __future__ import annotations
+
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Literal, Set
+from typing import Any, ClassVar, Dict, List, Literal, Set, Union
 
 import rtoml
 import yaml
 from identify import identify
 from pydantic import BaseModel, Field, validator
 
-PROPAGATE_DEFAULT_FIELDS = {"prefix", "prefix_style", "message_style"}
+from brood.command import CommandConfig
+from brood.renderer import LogRendererConfig
+
 JSONDict = Dict[str, Any]
 
 
@@ -17,47 +20,24 @@ class FailureMode(str, Enum):
     KILL_OTHERS = "kill_others"
 
 
-class CommandConfig(BaseModel):
-    command: str
-
-    tag: str = Field(default="")
-    prefix: str = Field(default="")
-    prefix_style: str = Field(default="")
-    message_style: str = Field(default="")
-
-    restart_on_exit: bool = True
-    restart_delay: int = 5
-
-
 ConfigFormat = Literal["json", "toml", "yaml"]
 
 
-class Config(BaseModel):
-    prefix: str = "{timestamp} {tag} "
-
-    prefix_style: str = ""
-    message_style: str = ""
-
-    internal_prefix: str = "{timestamp} "
-    internal_prefix_style: str = "dim"
-    internal_message_style: str = "dim"
-
+class BroodConfig(BaseModel):
     failure_mode: FailureMode = FailureMode.KILL_OTHERS
 
     verbose: bool = False
 
     commands: List[CommandConfig] = Field(default_factory=list)
+    renderer: Union[LogRendererConfig] = LogRendererConfig()
 
     FORMATS: ClassVar[Set[ConfigFormat]] = {"json", "toml", "yaml"}
 
-    @validator("commands", each_item=True)
-    def propagate_defaults(cls, command: CommandConfig, values: Dict[str, object]) -> CommandConfig:
-        for field in PROPAGATE_DEFAULT_FIELDS:
-            setattr(command, field, getattr(command, field) or values[field])
-        return command
+    class Config:
+        use_enum_values = True
 
     @classmethod
-    def from_file(cls, path: Path) -> "Config":
+    def from_file(cls, path: Path) -> BroodConfig:
         tags = identify.tags_from_path(path)
         intersection = tags & cls.FORMATS
 
@@ -84,32 +64,26 @@ class Config(BaseModel):
             raise ValueError(f"No valid converter for {path}.")
 
     @classmethod
-    def from_fmt(cls, t: str, format: ConfigFormat) -> "Config":
+    def from_fmt(cls, t: str, format: ConfigFormat) -> BroodConfig:
         return getattr(cls, f"from_{format}")(t)
 
     def to_fmt(self, format: ConfigFormat) -> str:
-        return getattr(self, f"to_{format}")()
-
-    def to_dict(self) -> JSONDict:
-        return json.loads(self.json())
+        return getattr(self, format)()
 
     @classmethod
-    def from_json(cls, j: str) -> "Config":
-        return Config.parse_raw(j)
-
-    def to_json(self) -> str:
-        return self.json()
+    def from_json(cls, j: str) -> BroodConfig:
+        return BroodConfig.parse_raw(j)
 
     @classmethod
-    def from_toml(cls, t: str) -> "Config":
-        return Config.parse_obj(rtoml.loads(t))
+    def from_toml(cls, t: str) -> BroodConfig:
+        return BroodConfig.parse_obj(rtoml.loads(t))
 
-    def to_toml(self) -> str:
-        return rtoml.dumps(self.to_dict())
+    def toml(self) -> str:
+        return rtoml.dumps(self.dict())
 
     @classmethod
-    def from_yaml(cls, y: str) -> "Config":
-        return Config.parse_obj(yaml.safe_load(y))
+    def from_yaml(cls, y: str) -> BroodConfig:
+        return BroodConfig.parse_obj(yaml.safe_load(y))
 
-    def to_yaml(self) -> str:
-        return yaml.dump(self.to_dict())
+    def yaml(self) -> str:
+        return yaml.dump(self.dict())

@@ -8,9 +8,9 @@ from rich.panel import Panel
 from rich.traceback import install
 from typer import Argument, Typer
 
-from brood.config import Config
+from brood.config import BroodConfig
 from brood.constants import PACKAGE_NAME, __version__
-from brood.run import LogRenderer, Monitor
+from brood.monitor import Monitor
 
 app = Typer()
 
@@ -31,7 +31,7 @@ def run(
     console = Console()
     install(console=console, show_locals=True)
 
-    config_ = Config.from_file(config)
+    config_ = BroodConfig.from_file(config)
 
     verbose = verbose or debug
     if config_.verbose:
@@ -56,9 +56,8 @@ def run(
     asyncio.run(_run(config_, console), debug=debug)
 
 
-async def _run(config: Config, console: Console) -> None:
-    renderer = LogRenderer(config=config, console=console)
-    async with Monitor(config=config, renderer=renderer) as coordinator:
+async def _run(config: BroodConfig, console: Console) -> None:
+    async with Monitor(config=config, console=console) as coordinator:
         await coordinator.run()
 
 

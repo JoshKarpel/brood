@@ -3,21 +3,21 @@ from _pytest.tmpdir import TempPathFactory
 from hypothesis import given
 from hypothesis import strategies as st
 
-from brood.config import Config, ConfigFormat
+from brood.config import BroodConfig, ConfigFormat
 
 
-@given(config=st.builds(Config))
-@pytest.mark.parametrize("fmt", Config.FORMATS)
-def test_to_and_from(config: Config, fmt: ConfigFormat) -> None:
+@given(config=st.builds(BroodConfig))
+@pytest.mark.parametrize("fmt", BroodConfig.FORMATS)
+def test_to_and_from(config: BroodConfig, fmt: ConfigFormat) -> None:
     s = config.to_fmt(fmt)
     assert config.from_fmt(s, fmt) == config
 
 
-@given(config=st.builds(Config))
-@pytest.mark.parametrize("to_fmt", Config.FORMATS)
-@pytest.mark.parametrize("from_fmt", Config.FORMATS)
+@given(config=st.builds(BroodConfig))
+@pytest.mark.parametrize("to_fmt", BroodConfig.FORMATS)
+@pytest.mark.parametrize("from_fmt", BroodConfig.FORMATS)
 def test_save_and_load(
-    config: Config,
+    config: BroodConfig,
     to_fmt: ConfigFormat,
     from_fmt: ConfigFormat,
     tmp_path_factory: TempPathFactory,
@@ -25,4 +25,4 @@ def test_save_and_load(
     p = tmp_path_factory.mktemp("config") / f"config.{to_fmt}"
     config.to_file(p)
 
-    assert config == Config.from_file(p)
+    assert config == BroodConfig.from_file(p)

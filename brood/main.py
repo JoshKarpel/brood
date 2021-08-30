@@ -36,9 +36,9 @@ def run(
     asyncio.run(_run(config_, console))
 
 
-async def _run(config, console):
+async def _run(config: Config, console: Console) -> None:
     async with Coordinator(config=config, console=console) as coordinator:
-        await coordinator.wait()
+        await coordinator.monitor()
 
 
 @app.command()

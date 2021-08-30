@@ -6,7 +6,8 @@ from asyncio.subprocess import PIPE, Process, create_subprocess_shell
 from dataclasses import dataclass
 from datetime import datetime
 from shutil import get_terminal_size
-from typing import Optional, Tuple
+from types import TracebackType
+from typing import Optional, Tuple, Type
 
 from rich.console import Console
 from rich.text import Text
@@ -51,6 +52,8 @@ class CommandManager:
     async def readline(self) -> Tuple[CommandManager, ProcessLine]:
         if self.process is None:
             raise Exception(f"{self} has not been started yet.")
+        if self.process.stdout is None:
+            raise Exception(f"{self.process} does not have an associated stream reader")
 
         text = (await self.process.stdout.readline()).decode("utf-8").rstrip()
         return self, ProcessLine(text=text, timestamp=datetime.now(), command=self.command)
@@ -109,7 +112,7 @@ class Coordinator:
 
         self.console.print(text, soft_wrap=True)
 
-    async def wait(self) -> None:
+    async def monitor(self) -> None:
         pending = {create_task(manager.readline()) for manager in self.managers}
 
         while True:
@@ -124,5 +127,10 @@ class Coordinator:
         await self.start()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         await self.stop()

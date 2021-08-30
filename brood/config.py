@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 import yaml
 from pydantic import BaseModel, Field, validator
@@ -28,7 +28,7 @@ class Config(BaseModel):
         return Config.parse_obj(toml)
 
     @validator("commands", each_item=True)
-    def propagate_defaults(cls, command, values) -> None:
+    def propagate_defaults(cls, command: Command, values: Dict[str, object]) -> Command:
         for field in PROPAGATE_DEFAULT_FIELDS:
             setattr(command, field, getattr(command, field) or values[field])
         return command

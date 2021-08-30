@@ -10,7 +10,7 @@ from typer import Argument, Typer
 
 from brood.config import Config
 from brood.constants import PACKAGE_NAME, __version__
-from brood.run import LoggingMonitor
+from brood.run import LogRenderer, Monitor
 
 app = Typer()
 
@@ -57,7 +57,8 @@ def run(
 
 
 async def _run(config: Config, console: Console) -> None:
-    async with LoggingMonitor(config=config, console=console) as coordinator:
+    renderer = LogRenderer(config=config, console=console)
+    async with Monitor(config=config, renderer=renderer) as coordinator:
         await coordinator.run()
 
 

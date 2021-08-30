@@ -1,7 +1,7 @@
 import json
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Literal, Optional, Set
+from typing import Any, ClassVar, Dict, List, Literal, Set
 
 import rtoml
 import yaml
@@ -17,7 +17,7 @@ class FailureMode(str, Enum):
     KILL_OTHERS = "kill_others"
 
 
-class Command(BaseModel):
+class CommandConfig(BaseModel):
     command: str
 
     tag: str = Field(default="")
@@ -46,12 +46,12 @@ class Config(BaseModel):
 
     verbose: bool = False
 
-    commands: List[Command] = Field(default_factory=list)
+    commands: List[CommandConfig] = Field(default_factory=list)
 
     FORMATS: ClassVar[Set[ConfigFormat]] = {"json", "toml", "yaml"}
 
     @validator("commands", each_item=True)
-    def propagate_defaults(cls, command: Command, values: Dict[str, object]) -> Command:
+    def propagate_defaults(cls, command: CommandConfig, values: Dict[str, object]) -> CommandConfig:
         for field in PROPAGATE_DEFAULT_FIELDS:
             setattr(command, field, getattr(command, field) or values[field])
         return command

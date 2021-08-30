@@ -24,9 +24,6 @@ repos:
       - id: python-no-eval
       - id: python-no-log-warn
       - id: python-use-type-annotations
-      - id: rst-backticks
-      - id: rst-directive-colons
-      - id: rst-inline-touching-normal
   - repo: https://github.com/psf/black
     rev: 21.6b0
     hooks:

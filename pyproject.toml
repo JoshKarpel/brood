@@ -17,6 +17,7 @@ rich = "^10.9.0"
 typer = "^0.3.2"
 pydantic = "^1.8.2"
 PyYAML = "^5.4.1"
+watchdog = "^2.1.5"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"

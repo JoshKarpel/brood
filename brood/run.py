@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import os
-from asyncio import FIRST_EXCEPTION, Queue, create_task, gather, wait
+from asyncio import FIRST_EXCEPTION, Queue, create_task, gather, sleep, wait
 from asyncio.subprocess import PIPE, Process, create_subprocess_shell
 from dataclasses import dataclass, field
 from datetime import datetime
 from shutil import get_terminal_size
 from types import TracebackType
-from typing import List, Optional, Type
+from typing import Dict, Optional, Type
 
 from rich.console import Console
 from rich.text import Text
@@ -51,64 +51,73 @@ class CommandManager:
 
     def __post_init__(self) -> None:
         create_task(self.read())
+
         self.internal_messages.put_nowait(Message(f"Started command: {self.command.command!r}"))
 
+    @property
+    def has_exited(self) -> bool:
+        return self.process.returncode is not None
+
     async def stop(self) -> None:
-        if self.process is not None:
-            await self.internal_messages.put(Message(f"Killing command: {self.command.command!r}"))
-            self.process.kill()
+        if self.has_exited:
+            return None
+
+        await self.internal_messages.put(Message(f"Terminating command: {self.command.command!r}"))
+
+        self.process.terminate()
 
     async def wait(self) -> None:
-        if self.process is None:
+        if self.has_exited:
             return None
 
         await self.internal_messages.put(
             Message(f"Waiting for command to exit: {self.command.command!r}")
         )
+
         code = await self.process.wait()
+
         await self.internal_messages.put(
-            Message(f"Command exited with status code {code}: {self.command.command!r}")
+            Message(f"Command exited with code {code}: {self.command.command!r}")
         )
 
     async def read(self) -> None:
-        while True:
-            await self.process_messages.put((self.command, await self.readline()))
-
-    async def readline(self) -> Message:
         if self.process.stdout is None:
             raise Exception(f"{self.process} does not have an associated stream reader")
 
-        return Message((await self.process.stdout.readline()).decode("utf-8").rstrip())
+        while True:
+            line = await self.process.stdout.readline()
+            if not line:
+                await self.internal_messages.put(
+                    Message(
+                        f"Command exited with code {self.process.returncode}: {self.command.command}"
+                    )
+                )
+                return
+
+            await self.process_messages.put((self.command, Message(line.decode("utf-8").rstrip())))
 
 
 @dataclass(frozen=True)
 class Monitor:
     config: Config
     console: Console
-    managers: List[CommandManager] = field(default_factory=list)
+    managers: Dict[int, CommandManager] = field(default_factory=dict)
     process_messages: Queue = field(default_factory=Queue)
     internal_messages: Queue = field(default_factory=Queue)
 
-    async def start(self) -> None:
-        self.managers.extend(
-            await gather(
-                *(
-                    CommandManager.start(
-                        command=command,
-                        width=self.available_width(command),
-                        process_messages=self.process_messages,
-                        internal_messages=self.internal_messages,
-                    )
-                    for command in self.config.commands
-                )
-            )
+    async def start(self, command: Command, delay: int = 0) -> None:
+        await sleep(delay)
+
+        previous_manager = self.managers.get(id(command), None)
+        if previous_manager is not None:
+            await previous_manager.stop()
+
+        self.managers[id(command)] = await CommandManager.start(
+            command=command,
+            width=self.available_width(command),
+            process_messages=self.process_messages,
+            internal_messages=self.internal_messages,
         )
-
-    async def stop(self) -> None:
-        for manager in self.managers:
-            await manager.stop()
-
-        await gather(*(manager.wait() for manager in self.managers))
 
     def available_width(self, command: Command) -> int:
         example_prefix = Text.from_markup(
@@ -123,6 +132,7 @@ class Monitor:
     async def run(self) -> None:
         done, pending = await wait(
             (
+                self.handle_managers(),
                 self.handle_process_messages(),
                 self.handle_internal_messages(),
             ),
@@ -131,6 +141,15 @@ class Monitor:
 
         for d in done:
             d.result()
+
+    async def handle_managers(self) -> None:
+        await gather(*(self.start(command) for command in self.config.commands))
+
+        while True:
+            await sleep(1)
+            for manager in list(self.managers.values()):
+                if manager.has_exited and manager.command.restart_on_exit:
+                    create_task(self.start(manager.command, delay=manager.command.restart_delay))
 
     async def handle_internal_messages(self, drain: bool = False) -> None:
         while not drain or not self.internal_messages.empty():
@@ -151,7 +170,6 @@ class Monitor:
         pass
 
     async def __aenter__(self) -> Monitor:
-        await self.start()
         return self
 
     async def __aexit__(
@@ -161,10 +179,17 @@ class Monitor:
         exc_tb: Optional[TracebackType],
     ) -> Optional[bool]:
         await self.stop()
+        await self.wait()
         await gather(
             self.handle_internal_messages(drain=True), self.handle_process_messages(drain=True)
         )
         return None
+
+    async def stop(self) -> None:
+        await gather(*(manager.stop() for manager in self.managers.values()))
+
+    async def wait(self) -> None:
+        await gather(*(manager.wait() for manager in self.managers.values()))
 
 
 class LoggingMonitor(Monitor):

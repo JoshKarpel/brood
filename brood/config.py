@@ -4,16 +4,19 @@ from typing import Dict, List
 import yaml
 from pydantic import BaseModel, Field, validator
 
+PROPAGATE_DEFAULT_FIELDS = {"prefix", "prefix_style", "message_style"}
+
 
 class Command(BaseModel):
     command: str
+
     tag: str = Field(default="")
     prefix: str = Field(default="")
     prefix_style: str = Field(default="")
     message_style: str = Field(default="")
 
-
-PROPAGATE_DEFAULT_FIELDS = {"prefix", "prefix_style", "message_style"}
+    restart_on_exit: bool = True
+    restart_delay: int = 5
 
 
 class Config(BaseModel):

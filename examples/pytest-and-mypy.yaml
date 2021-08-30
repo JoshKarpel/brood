@@ -1,0 +1,8 @@
+commands:
+  - command: "ptw"
+    tag: "tests"
+    prefix_style: "green"
+
+  - command: "mypy"
+    tag: "types"
+    prefix_style: "blue"

@@ -1,11 +1,10 @@
 import asyncio
+import logging
 from pathlib import Path
 
 from rich.console import Console
-from rich.highlighter import JSONHighlighter
 from rich.json import JSON
 from rich.panel import Panel
-from rich.pretty import Pretty
 from rich.traceback import install
 from typer import Argument, Typer
 
@@ -50,6 +49,9 @@ def run(
 
     if dry:
         return
+
+    if debug:
+        logging.basicConfig(level=logging.DEBUG)
 
     asyncio.run(_run(config_, console), debug=debug)
 

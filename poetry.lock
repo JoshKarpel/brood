@@ -289,7 +289,7 @@ python-versions = "*"
 name = "watchdog"
 version = "2.1.5"
 description = "Filesystem events monitoring"
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=3.6"
 
@@ -299,7 +299,7 @@ watchmedo = ["PyYAML (>=3.10)", "argh (>=0.24.1)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9"
-content-hash = "f50cdc9a63c1d6ad56cff8c107370e93a939e495fc24ede71e337bed20811b8a"
+content-hash = "2df60c30a118804271464879da582810cee8b973db413e09f35c8dedaef5a694"
 
 [metadata.files]
 atomicwrites = [

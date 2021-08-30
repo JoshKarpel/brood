@@ -1,4 +1,12 @@
 commands:
+  - command: "while true; do sleep 1; echo hello; done"
+    tag: "one"
+    prefix_style: "yellow"
+
+  - command: "while true; do sleep 1.5; echo goodbye; done"
+    tag: "two"
+    prefix_style: "cyan"
+
   - command: "ptw"
     tag: "ptw"
     prefix_style: "green"

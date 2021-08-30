@@ -10,17 +10,21 @@ class Command(BaseModel):
     tag: str = Field(default="")
     prefix: str = Field(default="")
     prefix_style: str = Field(default="")
-    line_style: str = Field(default="")
+    message_style: str = Field(default="")
 
 
-PROPAGATE_DEFAULT_FIELDS = {"prefix", "prefix_style", "line_style"}
+PROPAGATE_DEFAULT_FIELDS = {"prefix", "prefix_style", "message_style"}
 
 
 class Config(BaseModel):
     prefix: str = "{timestamp} {tag} "
-    prefix_style: str = "dim"
-    line_style: str = ""
-    commands: List[Command] = Field(default=list)
+    prefix_style: str = ""
+    message_style: str = ""
+    internal_prefix: str = "{timestamp} "
+    internal_prefix_style: str = "dim"
+    internal_message_style: str = "dim"
+    verbose: bool = False
+    commands: List[Command] = Field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, path: Path) -> "Config":

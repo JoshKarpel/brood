@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from asyncio import as_completed, gather
+import io
+import pty
+from asyncio import StreamReader, as_completed, gather
 from asyncio.subprocess import Process, create_subprocess_shell
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,7 +10,6 @@ from subprocess import PIPE
 from typing import Optional
 
 from rich.console import Console
-from rich.style import Style
 from rich.text import Text
 
 from brood.config import Command, Config
@@ -27,7 +28,7 @@ class CommandManager:
 
         self.process: Optional[Process] = None
 
-    async def start(self):
+    async def start(self) -> None:
         if self.process is None:
             self.process = await create_subprocess_shell(
                 self.command.command,
@@ -36,7 +37,7 @@ class CommandManager:
                 shell=True,
             )
 
-    def stop(self):
+    def stop(self) -> None:
         if self.process is not None:
             self.process.kill()
 
@@ -52,16 +53,16 @@ class Coordinator:
 
         self.managers = [CommandManager(command) for command in config.commands]
 
-    async def start(self):
+    async def start(self) -> None:
         await gather(*(manager.start() for manager in self.managers))
 
-    async def stop(self):
+    async def stop(self) -> None:
         for manager in self.managers:
             manager.stop()
 
         await gather(*(manager.process.wait() for manager in self.managers))
 
-    async def wait(self):
+    async def wait(self) -> None:
         while True:
             for l in as_completed([manager.readline() for manager in self.managers]):
                 line = await l

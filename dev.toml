@@ -1,4 +1,4 @@
-prefix="[dim]{timestamp} | {tag}[/dim] "
+prefix="[dim]{timestamp}[/dim] | {tag} "
 
 [[commands]]
 tag = "one"

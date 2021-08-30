@@ -12,7 +12,11 @@ from typing import Dict, Optional, Type
 from rich.console import Console
 from rich.text import Text
 
-from brood.config import Command, Config
+from brood.config import Command, Config, FailureMode
+
+
+class KillOthers(Exception):
+    pass
 
 
 @dataclass(frozen=True)
@@ -87,11 +91,6 @@ class CommandManager:
         while True:
             line = await self.process.stdout.readline()
             if not line:
-                await self.internal_messages.put(
-                    Message(
-                        f"Command exited with code {self.process.returncode}: {self.command.command}"
-                    )
-                )
                 return
 
             await self.process_messages.put((self.command, Message(line.decode("utf-8").rstrip())))
@@ -140,16 +139,29 @@ class Monitor:
         )
 
         for d in done:
-            d.result()
+            try:
+                d.result()
+            except KillOthers as e:
+                await self.internal_messages.put(
+                    Message(
+                        f"Killing other processes due to command failing: {e.args[0].command!r}"
+                    )
+                )
 
     async def handle_managers(self) -> None:
         await gather(*(self.start(command) for command in self.config.commands))
 
         while True:
-            await sleep(1)
             for manager in list(self.managers.values()):
-                if manager.has_exited and manager.command.restart_on_exit:
-                    create_task(self.start(manager.command, delay=manager.command.restart_delay))
+                if manager.has_exited:
+                    if self.config.failure_mode is FailureMode.KILL_OTHERS:
+                        raise KillOthers(manager.command)
+
+                    if manager.command.restart_on_exit:
+                        create_task(
+                            self.start(manager.command, delay=manager.command.restart_delay)
+                        )
+            await sleep(1)
 
     async def handle_internal_messages(self, drain: bool = False) -> None:
         while not drain or not self.internal_messages.empty():

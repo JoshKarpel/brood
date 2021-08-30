@@ -1,0 +1,8 @@
+commands:
+  - command: "exit 1"
+    tag: "exit"
+    prefix_style: "red"
+
+  - command: "sleep 5; echo nope"
+    tag: "echo"
+    prefix_style: "green"

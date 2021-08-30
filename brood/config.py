@@ -1,3 +1,4 @@
+from enum import Enum
 from pathlib import Path
 from typing import Dict, List
 
@@ -5,6 +6,11 @@ import yaml
 from pydantic import BaseModel, Field, validator
 
 PROPAGATE_DEFAULT_FIELDS = {"prefix", "prefix_style", "message_style"}
+
+
+class FailureMode(str, Enum):
+    CONTINUE = "continue"
+    KILL_OTHERS = "kill_others"
 
 
 class Command(BaseModel):
@@ -21,12 +27,18 @@ class Command(BaseModel):
 
 class Config(BaseModel):
     prefix: str = "{timestamp} {tag} "
+
     prefix_style: str = ""
     message_style: str = ""
+
     internal_prefix: str = "{timestamp} "
     internal_prefix_style: str = "dim"
     internal_message_style: str = "dim"
+
+    failure_mode: FailureMode = FailureMode.KILL_OTHERS
+
     verbose: bool = False
+
     commands: List[Command] = Field(default_factory=list)
 
     @classmethod

@@ -12,27 +12,33 @@ app = Typer()
 
 
 @app.command()
-def run(path: Path = Argument(..., exists=True, readable=True), verbose: bool = False) -> None:
+def run(
+    config: Path = Argument(
+        "brood.yaml",
+        exists=True,
+        readable=True,
+        show_default=True,
+        envvar="BROOD_CONFIG",
+    ),
+    verbose: bool = False,
+    dry: bool = False,
+) -> None:
     console = Console()
 
-    config = Config.from_toml(path)
+    config_ = Config.from_yaml(config)
 
     if verbose:
-        console.print(config)
+        console.print_json(config_.json())
 
-    asyncio.run(_run(config, console))
+    if dry:
+        return
+
+    asyncio.run(_run(config_, console))
 
 
 async def _run(config, console):
     async with Coordinator(config=config, console=console) as coordinator:
         await coordinator.wait()
-
-
-@app.command()
-def parse(path: Path = Argument(..., exists=True, readable=True)) -> None:
-    console = Console()
-
-    console.print(Config.from_toml(path))
 
 
 @app.command()

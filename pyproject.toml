@@ -15,14 +15,15 @@ authors = ["Josh Karpel <josh.karpel@gmail.com>"]
 python = "^3.9"
 rich = "^10.9.0"
 typer = "^0.3.2"
-rtoml = "^0.7.0"
 pydantic = "^1.8.2"
+PyYAML = "^5.4.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
 pytest-mock = "^3.6.1"
 pytest-mypy = "^0.8.1"
 pytest-watch = "^4.2.0"
+types-PyYAML = "^5.4.8"
 
 [tool.poetry.scripts]
 brood = 'brood.main:app'

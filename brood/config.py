@@ -1,22 +1,34 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
-import rtoml
-from pydantic import BaseModel, Field
+import yaml
+from pydantic import BaseModel, Field, validator
 
 
 class Command(BaseModel):
     command: str
     tag: str = Field(default="")
-    prefix_style: Optional[str]
-    line_style: Optional[str]
+    prefix: str = Field(default="")
+    prefix_style: str = Field(default="")
+    line_style: str = Field(default="")
+
+
+PROPAGATE_DEFAULT_FIELDS = {"prefix", "prefix_style", "line_style"}
 
 
 class Config(BaseModel):
-    prefix: str
+    prefix: str = "{timestamp} {tag} "
+    prefix_style: str = "dim"
+    line_style: str = ""
     commands: List[Command] = Field(default=list)
 
     @classmethod
-    def from_toml(cls, path: Path) -> "Config":
-        toml = rtoml.loads(Path(path).read_text())
+    def from_yaml(cls, path: Path) -> "Config":
+        toml = yaml.safe_load(Path(path).read_text())
         return Config.parse_obj(toml)
+
+    @validator("commands", each_item=True)
+    def propagate_defaults(cls, command, values) -> None:
+        for field in PROPAGATE_DEFAULT_FIELDS:
+            setattr(command, field, getattr(command, field) or values[field])
+        return command

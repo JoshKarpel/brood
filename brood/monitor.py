@@ -7,7 +7,7 @@ from typing import AsyncContextManager, List, Optional, Type
 
 from rich.console import Console
 
-from brood.command import CommandConfig, CommandManager, RestartConfig
+from brood.command import CommandConfig, CommandManager
 from brood.config import BroodConfig, FailureMode
 from brood.message import Message
 from brood.renderer import RENDERERS, Renderer
@@ -33,7 +33,7 @@ class Monitor(AsyncContextManager):
 
     def __post_init__(self) -> None:
         self.renderer = RENDERERS[self.config.renderer.type](
-            self.config.renderer,
+            config=self.config.renderer,
             console=self.console,
             process_messages=self.process_messages,
             internal_messages=self.internal_messages,
@@ -106,7 +106,7 @@ class Monitor(AsyncContextManager):
                         )
 
     async def handle_watchers(self) -> None:
-        queue = Queue()
+        queue: Queue = Queue()
         for command in self.config.commands:
             if command.starter.type == "watch":
                 handler = StartCommand(command, queue)

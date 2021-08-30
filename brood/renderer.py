@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import shutil
-from abc import ABCMeta, abstractmethod
 from asyncio import ALL_COMPLETED, FIRST_EXCEPTION, Queue, wait
 from dataclasses import dataclass
 from shutil import get_terminal_size
-from typing import Literal
+from typing import Literal, Mapping, Type
 
 from pydantic import BaseModel
 from rich.console import Console
@@ -20,14 +19,13 @@ class RendererConfig(BaseModel):
 
 
 @dataclass(frozen=True)
-class Renderer(metaclass=ABCMeta):
+class Renderer:
     config: RendererConfig
     console: Console
 
     process_messages: Queue
     internal_messages: Queue
 
-    @abstractmethod
     def available_process_width(self, command: CommandConfig) -> int:
         raise NotImplementedError
 
@@ -138,4 +136,7 @@ class LogRendererConfig(RendererConfig):
     internal_message_style: str = "dim"
 
 
-RENDERERS = {"log": LogRenderer}
+RENDERERS: Mapping[Literal["null", "log"], Type[Renderer]] = {
+    "null": NullRenderer,
+    "log": LogRenderer,
+}

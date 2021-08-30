@@ -27,11 +27,13 @@ class FileWatcher(ContextManager):
 
         return self
 
-    def stop(self):
+    def stop(self) -> FileWatcher:
         self.observer.stop()
+        return self
 
-    def join(self):
+    def join(self) -> FileWatcher:
         self.observer.join()
+        return self
 
     def __enter__(self) -> FileWatcher:
         return self.start()

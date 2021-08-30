@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import os
-from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, Queue, Task, create_task, gather, sleep, wait
+from asyncio import FIRST_EXCEPTION, Queue, create_task, gather, wait
 from asyncio.subprocess import PIPE, Process, create_subprocess_shell
 from dataclasses import dataclass, field
 from datetime import datetime
 from shutil import get_terminal_size
 from types import TracebackType
-from typing import List, Optional, Tuple, Type
+from typing import List, Optional, Type
 
 from rich.console import Console
-from rich.style import Style
 from rich.text import Text
 
 from brood.config import Command, Config

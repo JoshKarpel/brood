@@ -31,7 +31,7 @@ def run(
     console = Console()
     install(console=console, show_locals=True)
 
-    config_ = Config.from_yaml(config)
+    config_ = Config.from_file(config)
 
     verbose = verbose or debug
     if config_.verbose:

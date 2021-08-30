@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from abc import ABCMeta, abstractmethod
 from asyncio import ALL_COMPLETED, FIRST_EXCEPTION, Queue, wait
 from dataclasses import dataclass
@@ -18,7 +19,7 @@ class RendererConfig(BaseModel):
     pass
 
 
-@dataclass
+@dataclass(frozen=True)
 class Renderer(metaclass=ABCMeta):
     config: RendererConfig
     console: Console
@@ -61,7 +62,17 @@ class Renderer(metaclass=ABCMeta):
         pass
 
 
-@dataclass
+@dataclass(frozen=True)
+class NullRenderer(Renderer):
+    def available_process_width(self, command: CommandConfig) -> int:
+        return shutil.get_terminal_size().columns
+
+
+class NullRendererConfig(RendererConfig):
+    type: Literal["null"] = "null"
+
+
+@dataclass(frozen=True)
 class LogRenderer(Renderer):
     config: LogRendererConfig
 

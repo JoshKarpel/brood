@@ -10,7 +10,7 @@ from identify import identify
 from pydantic import BaseModel, Field, validator
 
 from brood.command import CommandConfig
-from brood.renderer import LogRendererConfig
+from brood.renderer import LogRendererConfig, NullRenderer, NullRendererConfig
 
 JSONDict = Dict[str, Any]
 
@@ -29,7 +29,7 @@ class BroodConfig(BaseModel):
     verbose: bool = False
 
     commands: List[CommandConfig] = Field(default_factory=list)
-    renderer: Union[LogRendererConfig] = LogRendererConfig()
+    renderer: Union[NullRendererConfig, LogRendererConfig] = LogRendererConfig()
 
     FORMATS: ClassVar[Set[ConfigFormat]] = {"json", "toml", "yaml"}
 

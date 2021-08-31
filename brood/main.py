@@ -31,7 +31,7 @@ def run(
     console = Console()
     install(console=console, show_locals=True)
 
-    config_ = BroodConfig.from_file(config)
+    config_ = BroodConfig.load(config)
 
     verbose = verbose or debug
     if config_.verbose:

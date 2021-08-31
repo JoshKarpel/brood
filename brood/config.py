@@ -10,6 +10,7 @@ from identify import identify
 from pydantic import BaseModel, Field
 
 from brood.command import CommandConfig
+from brood.errors import UnknownFormat
 from brood.renderer import LogRendererConfig, NullRendererConfig
 
 JSONDict = Dict[str, Any]
@@ -37,37 +38,37 @@ class BroodConfig(BaseModel):
         use_enum_values = True
 
     @classmethod
-    def from_file(cls, path: Path) -> BroodConfig:
+    def load(cls, path: Path) -> BroodConfig:
         tags = identify.tags_from_path(path)
         intersection = tags & cls.FORMATS
 
         if not intersection:
-            raise ValueError(f"Could not load config from {path}: unknown format.")
+            raise UnknownFormat(f"Could not load config from {path}: unknown format.")
 
         text = path.read_text()
         for fmt in intersection:
             return getattr(cls, f"from_{fmt}")(text)
-        else:
-            raise ValueError(f"No valid converter for {path}.")
+        else:  # pragma: unreachable
+            raise UnknownFormat(f"No valid converter for {path}.")
 
-    def to_file(self, path: Path) -> None:
+    def save(self, path: Path) -> None:
         tags = identify.tags_from_filename(path)
         intersection = tags & self.FORMATS
 
         if not intersection:
-            raise ValueError(f"Could not write config to {path}: unknown format.")
+            raise UnknownFormat(f"Could not write config to {path}: unknown format.")
 
         for fmt in intersection:
-            path.write_text(self.to_fmt(fmt))
+            path.write_text(self.to_format(fmt))
             return None
-        else:
-            raise ValueError(f"No valid converter for {path}.")
+        else:  # pragma: unreachable
+            raise UnknownFormat(f"No valid converter for {path}.")
 
     @classmethod
-    def from_fmt(cls, t: str, format: ConfigFormat) -> BroodConfig:
+    def from_format(cls, t: str, format: ConfigFormat) -> BroodConfig:
         return getattr(cls, f"from_{format}")(t)
 
-    def to_fmt(self, format: ConfigFormat) -> str:
+    def to_format(self, format: ConfigFormat) -> str:
         return getattr(self, format)()
 
     @classmethod

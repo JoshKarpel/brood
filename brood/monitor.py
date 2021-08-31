@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, Queue, Task, create_task, gather, wait
+from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, Queue, Task, create_task, gather, sleep, wait
 from dataclasses import dataclass, field
 from types import TracebackType
 from typing import AsyncContextManager, Dict, List, Optional, Type
@@ -75,6 +75,10 @@ class Monitor(AsyncContextManager):
         await gather(*(self.start(command) for command in self.config.commands))
 
         while True:
+            if not self.managers:
+                await sleep(0.1)
+                continue
+
             done, pending = await wait(
                 [manager.wait() for manager in self.managers],
                 return_when=FIRST_COMPLETED,
@@ -126,15 +130,15 @@ class Monitor(AsyncContextManager):
                             await manager.stop()
                             await manager.wait()
 
-            await self.internal_messages.put(
-                Message(
-                    f"File {event.src_path} was {event.event_type}, starting command: {command.command!r}"
-                )
-            )
-
             previous = tasks.get(id(command))
             if previous:
                 previous.cancel()
+            else:
+                await self.internal_messages.put(
+                    Message(
+                        f"File {event.src_path} was {event.event_type}, starting command: {command.command!r}"
+                    )
+                )
 
             tasks[id(command)] = create_task(self.start(command_config=command))
 

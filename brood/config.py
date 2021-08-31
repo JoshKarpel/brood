@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+import shlex
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Literal, Set, Union
+from typing import Any, ClassVar, Dict, Iterable, List, Literal, Optional, Set, Tuple, Union
 
 import rtoml
 import yaml
 from identify import identify
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveFloat
 
-from brood.command import CommandConfig
 from brood.errors import UnknownFormat
-from brood.renderer import LogRendererConfig, NullRendererConfig
 
 JSONDict = Dict[str, Any]
 
@@ -24,18 +23,97 @@ class FailureMode(str, Enum):
 ConfigFormat = Literal["json", "toml", "yaml"]
 
 
-class BroodConfig(BaseModel):
+class BaseConfig(BaseModel):
+    class Config:
+        frozen = True
+        use_enum_values = True
+
+
+class RestartConfig(BaseConfig):
+    type: Literal["restart"] = "restart"
+
+    restart_on_exit: bool = True
+    delay: PositiveFloat = 5
+
+
+class WatchConfig(BaseConfig):
+    type: Literal["watch"] = "watch"
+
+    paths: Tuple[str, ...] = Field(default_factory=tuple)
+    poll: bool = False
+
+    allow_multiple: bool = False
+
+
+class OnceConfig(BaseConfig):
+    type: Literal["once"] = "once"
+
+
+class CommandConfig(BaseConfig):
+    command: Union[str, Tuple[str, ...]]
+    shutdown: Optional[Union[str, Tuple[str, ...]]]
+
+    tag: str = ""
+
+    prefix: Optional[str] = None
+    prefix_style: Optional[str] = None
+    message_style: Optional[str] = None
+
+    starter: Union[RestartConfig, WatchConfig] = RestartConfig()
+
+    @property
+    def command_string(self) -> str:
+        return normalize_command(self.command)
+
+    @property
+    def shutdown_string(self) -> Optional[str]:
+        if self.shutdown is None:
+            return None
+
+        return normalize_command(self.shutdown)
+
+
+def normalize_command(command: Union[str, Iterable[str]]) -> str:
+    if not isinstance(command, str):
+        return shlex.join(command)
+    else:
+        return command
+
+
+class RendererConfig(BaseConfig):
+    pass
+
+
+class NullRendererConfig(RendererConfig):
+    type: Literal["null"] = "null"
+
+
+class LogRendererConfig(RendererConfig):
+    type: Literal["log"] = "log"
+
+    prefix: str = "{timestamp} {tag} "
+
+    prefix_style: str = ""
+    message_style: str = ""
+
+    internal_prefix: str = "{timestamp} "
+    internal_prefix_style: str = "dim"
+    internal_message_style: str = "dim"
+
+
+class TUIRendererConfig(LogRendererConfig):
+    type: Literal["tui"] = "tui"
+
+
+class BroodConfig(BaseConfig):
     failure_mode: FailureMode = FailureMode.CONTINUE
 
     verbose: bool = False
 
-    commands: List[CommandConfig] = Field(default_factory=list)
-    renderer: Union[NullRendererConfig, LogRendererConfig] = LogRendererConfig()
+    commands: Tuple[CommandConfig, ...] = Field(default_factory=tuple)
+    renderer: Union[NullRendererConfig, LogRendererConfig, TUIRendererConfig] = LogRendererConfig()
 
     FORMATS: ClassVar[Set[ConfigFormat]] = {"json", "toml", "yaml"}
-
-    class Config:
-        use_enum_values = True
 
     @classmethod
     def load(cls, path: Path) -> BroodConfig:

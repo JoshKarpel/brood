@@ -7,8 +7,8 @@ from typing import AsyncContextManager, Dict, List, Optional, Type
 
 from rich.console import Console
 
-from brood.command import CommandConfig, CommandManager, OnceConfig
-from brood.config import BroodConfig, FailureMode
+from brood.command import CommandManager
+from brood.config import BroodConfig, CommandConfig, FailureMode, OnceConfig
 from brood.message import Message
 from brood.renderer import RENDERERS, Renderer
 from brood.watch import FileWatcher, StartCommand
@@ -55,6 +55,7 @@ class Monitor(AsyncContextManager):
             (
                 self.handle_managers(),
                 self.handle_watchers(),
+                self.renderer.mount(),
                 self.renderer.run(),
             ),
             return_when=FIRST_EXCEPTION,

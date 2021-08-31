@@ -13,3 +13,6 @@ commands:
     starter:
       type: "watch"
       paths: ["brood/", "tests/"]
+
+renderer:
+  type: "tui"

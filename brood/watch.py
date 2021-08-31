@@ -13,7 +13,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
-from brood.command import CommandConfig, WatchConfig
+from brood.config import CommandConfig, WatchConfig
 
 
 @dataclass

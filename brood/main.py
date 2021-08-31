@@ -38,7 +38,7 @@ def run(
         verbose = True
 
     if verbose:
-        config_.verbose = True
+        config_ = config_.copy(update={"verbose": True})
         console.print(
             Panel(
                 JSON.from_data(config_.dict()),

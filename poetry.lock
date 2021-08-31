@@ -402,6 +402,17 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "textual"
+version = "0.1.10"
+description = "Text User Interface using Rich"
+category = "main"
+optional = false
+python-versions = ">=3.7,<4.0"
+
+[package.dependencies]
+rich = ">=10.7.0,<11.0.0"
+
+[[package]]
 name = "toml"
 version = "0.10.2"
 description = "Python Library for Tom's Obvious, Minimal Language"
@@ -475,7 +486,7 @@ watchmedo = ["PyYAML (>=3.10)", "argh (>=0.24.1)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9"
-content-hash = "71fb14008a2524aaa782d0ad73e8cd859c46720493992391d728b7cb69d5ba53"
+content-hash = "bcaa8ffa5b6ca72fe1c73eceb9ba60e679966ab89db6ec68b3f35351d0c1088e"
 
 [metadata.files]
 atomicwrites = [
@@ -755,6 +766,10 @@ smmap = [
 sortedcontainers = [
     {file = "sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0"},
     {file = "sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88"},
+]
+textual = [
+    {file = "textual-0.1.10-py3-none-any.whl", hash = "sha256:39c2f09ad9107b1aac26bc4cc8353f1331838770a22578c3360da41320f43926"},
+    {file = "textual-0.1.10.tar.gz", hash = "sha256:80ebb32f67489ab88c1eeabca23dc33beac3cef7e978a0acac4df34fdad047ba"},
 ]
 toml = [
     {file = "toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b"},

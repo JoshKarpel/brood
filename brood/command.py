@@ -1,67 +1,13 @@
 from __future__ import annotations
 
 import os
-import shlex
 from asyncio import Queue, create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, Process
 from dataclasses import dataclass
-from functools import cached_property
-from typing import List, Literal, Optional, Union
+from typing import Optional
 
-from pydantic import BaseModel, Field, PositiveFloat
-
+from brood.config import CommandConfig
 from brood.message import Message
-
-
-class RestartConfig(BaseModel):
-    type: Literal["restart"] = "restart"
-
-    restart_on_exit: bool = True
-    delay: PositiveFloat = 5
-
-
-class WatchConfig(BaseModel):
-    type: Literal["watch"] = "watch"
-
-    paths: List[str] = Field(default_factory=list)
-    poll: bool = False
-
-    allow_multiple: bool = False
-
-
-class OnceConfig(BaseModel):
-    type: Literal["once"] = "once"
-
-
-class CommandConfig(BaseModel):
-    command: Union[str, List[str]]
-    shutdown: Optional[Union[str, List[str]]]
-
-    tag: str = ""
-
-    prefix: Optional[str] = None
-    prefix_style: Optional[str] = None
-    message_style: Optional[str] = None
-
-    starter: Union[RestartConfig, WatchConfig] = RestartConfig()
-
-    @property
-    def command_string(self) -> str:
-        return normalize_command(self.command)
-
-    @property
-    def shutdown_string(self) -> Optional[str]:
-        if self.shutdown is None:
-            return None
-
-        return normalize_command(self.shutdown)
-
-
-def normalize_command(command: Union[str, List[str]]) -> str:
-    if isinstance(command, list):
-        return shlex.join(command)
-    else:
-        return command
 
 
 @dataclass

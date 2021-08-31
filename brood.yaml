@@ -1,0 +1,14 @@
+commands:
+  - command: "pytest --cov"
+    tag: "tests"
+    prefix_style: "green"
+    starter:
+      type: "watch"
+      paths: [ "brood/", "tests/" ]
+
+  - command: "dmypy run"
+    tag: "types"
+    prefix_style: "cyan"
+    starter:
+      type: "watch"
+      paths: ["brood/", "tests/"]

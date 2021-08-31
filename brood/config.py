@@ -24,7 +24,7 @@ ConfigFormat = Literal["json", "toml", "yaml"]
 
 
 class BroodConfig(BaseModel):
-    failure_mode: FailureMode = FailureMode.KILL_OTHERS
+    failure_mode: FailureMode = FailureMode.CONTINUE
 
     verbose: bool = False
 

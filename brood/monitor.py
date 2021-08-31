@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, Queue, gather, wait
+from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, Queue, Task, create_task, gather, wait
 from dataclasses import dataclass, field
 from types import TracebackType
-from typing import AsyncContextManager, List, Optional, Type
+from typing import AsyncContextManager, Dict, List, Optional, Type
 
 from rich.console import Console
 
@@ -39,16 +39,16 @@ class Monitor(AsyncContextManager):
             internal_messages=self.internal_messages,
         )
 
-    async def start(self, command_config: CommandConfig, restart: bool = False) -> None:
-        self.managers.append(
-            await CommandManager.start(
-                command_config=command_config,
-                process_messages=self.process_messages,
-                internal_messages=self.internal_messages,
-                width=self.renderer.available_process_width(command_config),
-                restart=restart,
-            )
+    async def start(self, command_config: CommandConfig, restart: bool = False) -> CommandManager:
+        manager = await CommandManager.start(
+            command_config=command_config,
+            process_messages=self.process_messages,
+            internal_messages=self.internal_messages,
+            width=self.renderer.available_process_width(command_config),
+            restart=restart,
         )
+        self.managers.append(manager)
+        return manager
 
     async def run(self) -> None:
         done, pending = await wait(
@@ -114,6 +114,8 @@ class Monitor(AsyncContextManager):
                 watcher.start()
                 self.watchers.append(watcher)
 
+        tasks: Dict[int, Task] = {}
+
         while True:
             command, event = await queue.get()
 
@@ -129,7 +131,12 @@ class Monitor(AsyncContextManager):
                     f"File {event.src_path} was {event.event_type}, starting command: {command.command!r}"
                 )
             )
-            await self.start(command_config=command)
+
+            previous = tasks.get(id(command))
+            if previous:
+                previous.cancel()
+
+            tasks[id(command)] = create_task(self.start(command_config=command))
 
     async def __aenter__(self) -> Monitor:
         return self

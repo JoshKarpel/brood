@@ -51,6 +51,8 @@ jobs:
       run: poetry install --no-interaction
     - name: Make sure we can build the package
       run: poetry build -vvv
+    - name: Check types
+      run: poetry run mypy
     - name: Run tests
       run: poetry run pytest --cov --cov-report=xml
     - name: Upload coverage

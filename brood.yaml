@@ -1,4 +1,11 @@
 commands:
   - command: "ptw"
-    tag: "ptw"
+    tag: "tests"
     prefix_style: "green"
+
+  - command: "dmypy run -- --pretty"
+    tag: "types"
+    prefix_style: "cyan"
+    starter:
+      type: "watch"
+      paths: ["brood/", "tests/"]

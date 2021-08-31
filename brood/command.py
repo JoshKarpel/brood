@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import shlex
 from asyncio import Queue, create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, Process
 from dataclasses import dataclass
+from functools import cached_property
 from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, PositiveFloat
@@ -27,8 +29,13 @@ class WatchConfig(BaseModel):
     allow_multiple: bool = False
 
 
+class OnceConfig(BaseModel):
+    type: Literal["once"] = "once"
+
+
 class CommandConfig(BaseModel):
-    command: str
+    command: Union[str, List[str]]
+    shutdown: Optional[Union[str, List[str]]]
 
     tag: str = ""
 
@@ -37,6 +44,24 @@ class CommandConfig(BaseModel):
     message_style: Optional[str] = None
 
     starter: Union[RestartConfig, WatchConfig] = RestartConfig()
+
+    @property
+    def command_string(self) -> str:
+        return normalize_command(self.command)
+
+    @property
+    def shutdown_string(self) -> Optional[str]:
+        if self.shutdown is None:
+            return None
+
+        return normalize_command(self.shutdown)
+
+
+def normalize_command(command: Union[str, List[str]]) -> str:
+    if isinstance(command, list):
+        return shlex.join(command)
+    else:
+        return command
 
 
 @dataclass
@@ -61,8 +86,10 @@ class CommandManager:
         if restart and command_config.starter.type == "restart":
             await sleep(command_config.starter.delay)
 
+        await internal_messages.put(Message(f"Started command: {command_config.command_string!r}"))
+
         process = await create_subprocess_shell(
-            command_config.command,
+            command_config.command_string,
             stdout=PIPE,
             stderr=PIPE,
             shell=True,
@@ -80,10 +107,6 @@ class CommandManager:
     def __post_init__(self) -> None:
         create_task(self.read())
 
-        self.internal_messages.put_nowait(
-            Message(f"Started command: {self.command_config.command!r}")
-        )
-
     @property
     def exit_code(self) -> Optional[int]:
         return self.process.returncode
@@ -99,7 +122,7 @@ class CommandManager:
         self.was_killed = True
 
         await self.internal_messages.put(
-            Message(f"Terminating command: {self.command_config.command!r}")
+            Message(f"Terminating command: {self.command_config.command_string!r}")
         )
 
         self.process.terminate()

@@ -5,6 +5,7 @@ import shlex
 from asyncio import Queue, create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, Process
 from dataclasses import dataclass
+from functools import cached_property
 from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, PositiveFloat
@@ -28,8 +29,13 @@ class WatchConfig(BaseModel):
     allow_multiple: bool = False
 
 
+class OnceConfig(BaseModel):
+    type: Literal["once"] = "once"
+
+
 class CommandConfig(BaseModel):
     command: Union[str, List[str]]
+    shutdown: Optional[Union[str, List[str]]]
 
     tag: str = ""
 
@@ -41,10 +47,21 @@ class CommandConfig(BaseModel):
 
     @property
     def command_string(self) -> str:
-        if isinstance(self.command, list):
-            return shlex.join(self.command)
-        else:
-            return self.command
+        return normalize_command(self.command)
+
+    @property
+    def shutdown_string(self) -> Optional[str]:
+        if self.shutdown is None:
+            return None
+
+        return normalize_command(self.shutdown)
+
+
+def normalize_command(command: Union[str, List[str]]) -> str:
+    if isinstance(command, list):
+        return shlex.join(command)
+    else:
+        return command
 
 
 @dataclass
@@ -69,6 +86,8 @@ class CommandManager:
         if restart and command_config.starter.type == "restart":
             await sleep(command_config.starter.delay)
 
+        await internal_messages.put(Message(f"Started command: {command_config.command_string!r}"))
+
         process = await create_subprocess_shell(
             command_config.command_string,
             stdout=PIPE,
@@ -87,10 +106,6 @@ class CommandManager:
 
     def __post_init__(self) -> None:
         create_task(self.read())
-
-        self.internal_messages.put_nowait(
-            Message(f"Started command: {self.command_config.command_string!r}")
-        )
 
     @property
     def exit_code(self) -> Optional[int]:

@@ -7,7 +7,7 @@ from typing import AsyncContextManager, Dict, List, Optional, Type
 
 from rich.console import Console
 
-from brood.command import CommandConfig, CommandManager
+from brood.command import CommandConfig, CommandManager, OnceConfig
 from brood.config import BroodConfig, FailureMode
 from brood.message import Message
 from brood.renderer import RENDERERS, Renderer
@@ -111,6 +111,7 @@ class Monitor(AsyncContextManager):
 
     async def handle_watchers(self) -> None:
         queue: Queue = Queue()
+
         for command in self.config.commands:
             if command.starter.type == "watch":
                 handler = StartCommand(command, queue)
@@ -153,11 +154,13 @@ class Monitor(AsyncContextManager):
     ) -> Optional[bool]:
         await self.stop()
         await self.wait()
+        await self.shutdown()
         await self.renderer.run(drain=True)
         return None
 
     async def stop(self) -> None:
         await gather(*(manager.stop() for manager in self.managers))
+
         for watcher in self.watchers:
             watcher.stop()
 
@@ -173,3 +176,13 @@ class Monitor(AsyncContextManager):
 
         for watcher in self.watchers:
             watcher.join()
+
+    async def shutdown(self) -> None:
+        shutdown_commands = [
+            command.copy(update={"command": command.shutdown, "starter": OnceConfig()})
+            for command in self.config.commands
+            if command.shutdown
+        ]
+
+        await gather(*(self.start(command) for command in shutdown_commands))
+        await self.wait()

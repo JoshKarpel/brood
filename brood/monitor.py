@@ -67,7 +67,7 @@ class Monitor(AsyncContextManager):
                 manager = e.args[0]
                 await self.internal_messages.put(
                     Message(
-                        f"Killing other processes due to command failing with code {manager.exit_code}: {manager.command_config.command!r}"
+                        f"Killing other processes due to command failing with code {manager.exit_code}: {manager.command_config.command_string!r}"
                     )
                 )
 
@@ -91,7 +91,7 @@ class Monitor(AsyncContextManager):
 
                 await self.internal_messages.put(
                     Message(
-                        f"Command exited with code {manager.exit_code}: {manager.command_config.command!r}"
+                        f"Command exited with code {manager.exit_code}: {manager.command_config.command_string!r}"
                     )
                 )
 
@@ -136,7 +136,7 @@ class Monitor(AsyncContextManager):
             else:
                 await self.internal_messages.put(
                     Message(
-                        f"File {event.src_path} was {event.event_type}, starting command: {command.command!r}"
+                        f"File {event.src_path} was {event.event_type}, starting command: {command.command_string!r}"
                     )
                 )
 
@@ -167,7 +167,7 @@ class Monitor(AsyncContextManager):
         for manager in managers:
             await self.internal_messages.put(
                 Message(
-                    f"Command exited with code {manager.exit_code}: {manager.command_config.command!r}"
+                    f"Command exited with code {manager.exit_code}: {manager.command_config.command_string!r}"
                 )
             )
 

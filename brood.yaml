@@ -6,7 +6,7 @@ commands:
       type: "watch"
       paths: [ "brood/", "tests/" ]
 
-  - command: "dmypy run"
+  - command: ["dmypy", "run"]
     tag: "types"
     prefix_style: "cyan"
     starter:

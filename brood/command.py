@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from asyncio import Queue, create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, Process
 from dataclasses import dataclass
@@ -28,7 +29,7 @@ class WatchConfig(BaseModel):
 
 
 class CommandConfig(BaseModel):
-    command: str
+    command: Union[str, List[str]]
 
     tag: str = ""
 
@@ -37,6 +38,13 @@ class CommandConfig(BaseModel):
     message_style: Optional[str] = None
 
     starter: Union[RestartConfig, WatchConfig] = RestartConfig()
+
+    @property
+    def command_string(self) -> str:
+        if isinstance(self.command, list):
+            return shlex.join(self.command)
+        else:
+            return self.command
 
 
 @dataclass
@@ -62,7 +70,7 @@ class CommandManager:
             await sleep(command_config.starter.delay)
 
         process = await create_subprocess_shell(
-            command_config.command,
+            command_config.command_string,
             stdout=PIPE,
             stderr=PIPE,
             shell=True,
@@ -81,7 +89,7 @@ class CommandManager:
         create_task(self.read())
 
         self.internal_messages.put_nowait(
-            Message(f"Started command: {self.command_config.command!r}")
+            Message(f"Started command: {self.command_config.command_string!r}")
         )
 
     @property
@@ -99,7 +107,7 @@ class CommandManager:
         self.was_killed = True
 
         await self.internal_messages.put(
-            Message(f"Terminating command: {self.command_config.command!r}")
+            Message(f"Terminating command: {self.command_config.command_string!r}")
         )
 
         self.process.terminate()

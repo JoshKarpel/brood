@@ -39,9 +39,9 @@ class CommandManager:
     async def start(
         cls,
         command_config: CommandConfig,
-        process_messages: Queue,
-        internal_messages: Queue,
-        process_events: Queue,
+        process_messages: Queue[Tuple[CommandConfig, Message]],
+        internal_messages: Queue[Message],
+        process_events: Queue[ProcessEvent],
         width: int,
         delay: bool,
     ) -> CommandManager:

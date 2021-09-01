@@ -6,6 +6,7 @@ from types import TracebackType
 from typing import AsyncContextManager, List, Optional, Tuple, Type, TypeVar
 
 from rich.console import Console
+from watchdog.events import FileSystemEvent
 
 from brood.command import CommandManager, ProcessEvent
 from brood.config import BroodConfig, CommandConfig, FailureMode, OnceConfig
@@ -19,7 +20,7 @@ class KillOthers(Exception):
 
 
 @dataclass
-class Monitor(AsyncContextManager):
+class Monitor(AsyncContextManager["Monitor"]):
     config: BroodConfig
 
     console: Console
@@ -114,7 +115,7 @@ class Monitor(AsyncContextManager):
                         )
 
     async def handle_watchers(self) -> None:
-        queue: Queue = Queue()
+        queue: Queue[Tuple[CommandConfig, FileSystemEvent]] = Queue()
 
         for config in self.config.commands:
             if config.starter.type == "watch":

@@ -18,7 +18,7 @@ from brood.config import CommandConfig, WatchConfig
 
 
 @dataclass
-class FileWatcher(ContextManager):
+class FileWatcher(ContextManager["FileWatcher"]):
     config: WatchConfig
     event_handler: FileSystemEventHandler
 

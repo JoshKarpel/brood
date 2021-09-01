@@ -3,12 +3,14 @@ from __future__ import annotations
 import shutil
 from asyncio import ALL_COMPLETED, FIRST_EXCEPTION, Queue, create_task, sleep, wait
 from dataclasses import dataclass
+from datetime import timedelta
+from random import choice
 from shutil import get_terminal_size
 from typing import Dict, Literal, Mapping, Type
 
 from rich.console import Console, Group
 from rich.live import Live
-from rich.progress import Progress, RenderableColumn, SpinnerColumn, TaskID
+from rich.progress import Progress, ProgressColumn, RenderableColumn, SpinnerColumn, Task, TaskID
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
@@ -74,6 +76,18 @@ GREEN_CHECK = Text("✔", style="green")
 RED_X = Text("✘", style="red")
 
 
+class TimeElapsedColumn(ProgressColumn):
+    """Renders time elapsed."""
+
+    def render(self, task: "Task") -> Text:
+        """Show time remaining."""
+        elapsed = task.finished_time if task.finished else task.elapsed
+        if elapsed is None:
+            return Text("-:--:--", style="dim")
+        delta = timedelta(seconds=int(elapsed))
+        return Text(str(delta), style="dim")
+
+
 @dataclass(frozen=True)
 class LogRenderer(Renderer):
     config: LogRendererConfig
@@ -90,11 +104,11 @@ class LogRenderer(Renderer):
             if p is None:
                 return
 
-            p.columns[0].finished_text = GREEN_CHECK if manager.exit_code == 0 else RED_X
-            p.columns[1].renderable = Text(
+            p.columns[0].finished_text = GREEN_CHECK if manager.exit_code == 0 else RED_X  # type: ignore
+            p.columns[1].renderable = Text(  # type: ignore
                 str(manager.exit_code).rjust(3), style="green" if manager.exit_code == 0 else "red"
             )
-            p.update(TaskID(0), completed=1)
+            p.update(TaskID(0), completed=1)  # type: ignore
 
             await sleep(10)
 
@@ -104,10 +118,10 @@ class LogRenderer(Renderer):
 
         rule = Rule(style="dim")
 
-        def refresh():
+        def refresh() -> None:
             table = Table.grid(expand=True)
             for v in state.values():
-                table.add_row(v)
+                table.add_row(v)  # type: ignore
 
             live.update(Group(rule, table))
 
@@ -123,15 +137,19 @@ class LogRenderer(Renderer):
 
                 if event.type is EventType.Started:
                     p = Progress(
-                        SpinnerColumn(),
+                        SpinnerColumn(
+                            spinner_name=choice(["dots"] + [f"dots{n}" for n in range(2, 12)])
+                        ),
                         RenderableColumn(Text("  ?", style="dim")),
                         RenderableColumn(
                             Text(str(event.manager.process.pid).rjust(5), style="dim")
                         ),
+                        TimeElapsedColumn(),
                         RenderableColumn(
                             Text(
                                 event.manager.command_config.command_string,
-                                style=event.manager.command_config.prefix_style,
+                                style=event.manager.command_config.prefix_style
+                                or self.config.prefix_style,
                             )
                         ),
                         console=self.console,

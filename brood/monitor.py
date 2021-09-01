@@ -41,14 +41,14 @@ class Monitor(AsyncContextManager):
             process_events=self.process_events,
         )
 
-    async def start(self, command_config: CommandConfig, restart: bool = False) -> CommandManager:
+    async def start(self, command_config: CommandConfig, delay: bool = False) -> CommandManager:
         manager = await CommandManager.start(
             command_config=command_config,
             process_messages=self.process_messages,
             internal_messages=self.internal_messages,
             process_events=self.process_events,
             width=self.renderer.available_process_width(command_config),
-            restart=restart,
+            delay=delay,
         )
         self.managers.append(manager)
         return manager
@@ -110,42 +110,41 @@ class Monitor(AsyncContextManager):
                     if manager.command_config.starter.restart_on_exit:
                         await self.start(
                             command_config=manager.command_config,
-                            restart=True,
+                            delay=True,
                         )
 
     async def handle_watchers(self) -> None:
         queue: Queue = Queue()
 
-        for command in self.config.commands:
-            if command.starter.type == "watch":
-                handler = StartCommand(command, queue)
-                watcher = FileWatcher(command.starter, handler)
+        for config in self.config.commands:
+            if config.starter.type == "watch":
+                handler = StartCommand(config, queue)
+                watcher = FileWatcher(config.starter, handler)
                 watcher.start()
                 self.watchers.append(watcher)
 
-        tasks: Dict[int, Task] = {}
+        start_tasks: Dict[CommandConfig, Task] = {}
 
         while True:
-            command, event = await queue.get()
+            config, event = await queue.get()
 
-            if command.starter.type == "watch":
-                if not command.starter.allow_multiple:
-                    for manager in self.managers:
-                        if manager.command_config is command:
-                            await manager.stop()
-                            await manager.wait()
+            if config.starter.type == "watch" and not config.starter.allow_multiple:
+                for manager in self.managers:
+                    if manager.command_config is config:
+                        await manager.kill()
+                        await manager.wait()
 
-            previous = tasks.get(id(command))
+            previous = start_tasks.get(config)
             if previous:
                 previous.cancel()
             else:
                 await self.internal_messages.put(
                     Message(
-                        f"File {event.src_path} was {event.event_type}, starting command: {command.command_string!r}"
+                        f"File {event.src_path} was {event.event_type}, starting command: {config.command_string!r}"
                     )
                 )
 
-            tasks[id(command)] = create_task(self.start(command_config=command))
+            start_tasks[config] = create_task(self.start(command_config=config, delay=True))
 
     async def __aenter__(self) -> Monitor:
         return self

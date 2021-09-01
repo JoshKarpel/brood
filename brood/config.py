@@ -20,20 +20,23 @@ class BaseConfig(BaseModel):
         frozen = True
         use_enum_values = True
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self.__class__) + hash(
             tuple(v if not isinstance(v, list) else hash(tuple(v)) for v in self.__dict__.values())
         )
 
 
-class RestartConfig(BaseConfig):
+class StarterConfig(BaseConfig):
+    delay: PositiveFloat = 2
+
+
+class RestartConfig(StarterConfig):
     type: Literal["restart"] = "restart"
 
     restart_on_exit: bool = True
-    delay: PositiveFloat = 5
 
 
-class WatchConfig(BaseConfig):
+class WatchConfig(StarterConfig):
     type: Literal["watch"] = "watch"
 
     paths: List[str] = Field(default_factory=list)
@@ -42,7 +45,7 @@ class WatchConfig(BaseConfig):
     allow_multiple: bool = False
 
 
-class OnceConfig(BaseConfig):
+class OnceConfig(StarterConfig):
     type: Literal["once"] = "once"
 
 
@@ -56,7 +59,7 @@ class CommandConfig(BaseConfig):
     prefix_style: Optional[str] = None
     message_style: Optional[str] = None
 
-    starter: Union[RestartConfig, WatchConfig] = RestartConfig()
+    starter: Union[RestartConfig, WatchConfig, OnceConfig] = RestartConfig()
 
     @property
     def command_string(self) -> str:

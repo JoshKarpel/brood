@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 from asyncio import Queue, create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, Process
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -33,9 +34,6 @@ class CommandManager:
 
     was_killed: bool = False
 
-    def __hash__(self):
-        return hash((self.__class__, self.command_config, self.process.pid))
-
     @classmethod
     async def start(
         cls,
@@ -44,9 +42,9 @@ class CommandManager:
         internal_messages: Queue,
         process_events: Queue,
         width: int,
-        restart: bool,
+        delay: bool,
     ) -> CommandManager:
-        if restart and command_config.starter.type == "restart":
+        if delay:
             await sleep(command_config.starter.delay)
 
         await internal_messages.put(Message(f"Started command: {command_config.command_string!r}"))
@@ -90,10 +88,22 @@ class CommandManager:
         self.was_killed = True
 
         await self.internal_messages.put(
-            Message(f"Terminating command: {self.command_config.command_string!r}")
+            Message(f"Stopping command: {self.command_config.command_string!r}")
         )
 
         self.process.terminate()
+
+    async def kill(self) -> None:
+        if self.has_exited:
+            return None
+
+        self.was_killed = True
+
+        await self.internal_messages.put(
+            Message(f"Killing command: {self.command_config.command_string!r}")
+        )
+
+        self.process.kill()
 
     async def wait(self) -> CommandManager:
         await self.process.wait()
@@ -112,3 +122,6 @@ class CommandManager:
             await self.process_messages.put(
                 (self.command_config, Message(line.decode("utf-8").rstrip()))
             )
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.command_config, self.process.pid))

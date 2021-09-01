@@ -3,10 +3,9 @@ from __future__ import annotations
 import os
 from asyncio import Queue, create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, Process
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Optional, Tuple
 
 from brood.config import CommandConfig
 from brood.message import Message
@@ -26,9 +25,11 @@ class ProcessEvent:
 @dataclass
 class CommandManager:
     command_config: CommandConfig
-    process_messages: Queue
-    internal_messages: Queue
-    process_events: Queue
+
+    process_messages: Queue[Tuple[CommandConfig, Message]]
+    internal_messages: Queue[Message]
+    process_events: Queue[ProcessEvent]
+
     width: int
     process: Process
 
@@ -109,6 +110,14 @@ class CommandManager:
         await self.process.wait()
         await self.process_events.put(ProcessEvent(manager=self, type=EventType.Stopped))
         return self
+
+    async def stop_and_wait(self) -> CommandManager:
+        await self.stop()
+        return await self.wait()
+
+    async def kill_and_wait(self) -> CommandManager:
+        await self.kill()
+        return await self.wait()
 
     async def read(self) -> None:
         if self.process.stdout is None:

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, Queue, Task, create_task, gather, sleep, wait
+from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, Queue, QueueEmpty, gather, sleep, wait
 from dataclasses import dataclass, field
 from types import TracebackType
-from typing import AsyncContextManager, Dict, List, Optional, Type
+from typing import AsyncContextManager, List, Optional, Tuple, Type, TypeVar
 
 from rich.console import Console
 
-from brood.command import CommandManager
+from brood.command import CommandManager, ProcessEvent
 from brood.config import BroodConfig, CommandConfig, FailureMode, OnceConfig
 from brood.message import Message
 from brood.renderer import RENDERERS, Renderer
@@ -28,9 +28,9 @@ class Monitor(AsyncContextManager):
     managers: List[CommandManager] = field(default_factory=list)
     watchers: List[FileWatcher] = field(default_factory=list)
 
-    process_messages: Queue = field(default_factory=Queue)
-    internal_messages: Queue = field(default_factory=Queue)
-    process_events: Queue = field(default_factory=Queue)
+    process_messages: Queue[Tuple[CommandConfig, Message]] = field(default_factory=Queue)
+    internal_messages: Queue[Message] = field(default_factory=Queue)
+    process_events: Queue[ProcessEvent] = field(default_factory=Queue)
 
     def __post_init__(self) -> None:
         self.renderer = RENDERERS[self.config.renderer.type](
@@ -123,28 +123,34 @@ class Monitor(AsyncContextManager):
                 watcher.start()
                 self.watchers.append(watcher)
 
-        start_tasks: Dict[CommandConfig, Task] = {}
-
         while True:
-            config, event = await queue.get()
+            # unique-ify on configs
+            starts = {}
+            stops = set()
+            for config, event in await drain_queue(queue):
+                starts[config] = event
 
-            if config.starter.type == "watch" and not config.starter.allow_multiple:
-                for manager in self.managers:
-                    if manager.command_config is config:
-                        await manager.kill()
-                        await manager.wait()
+                if config.starter.type == "watch" and not config.starter.allow_multiple:
+                    for manager in self.managers:
+                        if manager.command_config is config:
+                            stops.add(manager)
 
-            previous = start_tasks.get(config)
-            if previous:
-                previous.cancel()
-            else:
-                await self.internal_messages.put(
-                    Message(
-                        f"File {event.src_path} was {event.event_type}, starting command: {config.command_string!r}"
+                queue.task_done()
+
+            await gather(*(stop.stop() for stop in stops))
+
+            await gather(
+                *(
+                    self.internal_messages.put(
+                        Message(
+                            f"File {event.src_path} was {event.event_type}, starting command: {config.command_string!r}"
+                        )
                     )
+                    for config, event in starts.items()
                 )
+            )
 
-            start_tasks[config] = create_task(self.start(command_config=config, delay=True))
+            await gather(*(self.start(command_config=config) for config in starts))
 
     async def __aenter__(self) -> Monitor:
         return self
@@ -190,3 +196,24 @@ class Monitor(AsyncContextManager):
 
         await gather(*(self.start(command) for command in shutdown_commands))
         await self.wait()
+
+
+T = TypeVar("T")
+
+
+async def drain_queue(queue: Queue[T], buffer: Optional[float] = 1) -> List[T]:
+    items = [await queue.get()]
+
+    while True:
+        try:
+            items.append(queue.get_nowait())
+        except QueueEmpty:
+            if buffer:
+                await sleep(buffer)
+
+                if not queue.empty():
+                    continue
+                else:
+                    break
+
+    return items

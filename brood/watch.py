@@ -5,9 +5,10 @@ from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from types import TracebackType
-from typing import Callable, ContextManager, Optional, Type
+from typing import Callable, ContextManager, Optional, Tuple, Type
 
 import git
+from git import NoSuchPathError
 from gitignore_parser import parse_gitignore
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -56,17 +57,20 @@ class FileWatcher(ContextManager):
 @dataclass(frozen=True)
 class StartCommand(FileSystemEventHandler):
     command_config: CommandConfig
-    event_queue: Queue = field(default_factory=Queue)
+    event_queue: Queue[Tuple[CommandConfig, FileSystemEvent]] = field(default_factory=Queue)
 
     def on_modified(self, event: FileSystemEvent) -> None:
         if event.is_directory:
             return
 
         try:
-            if get_ignorer(get_git_root(Path(event.src_path)) / ".gitignore")(event.src_path):
+            git_root = get_git_root(Path(event.src_path))
+
+            if get_ignorer(git_root / ".gitignore")(event.src_path):
                 return
+        except NoSuchPathError:
+            return
         except Exception:
-            # if anything goes wrong, we'll be generous and assume that we should have emitted an event
             pass
 
         self.event_queue.put_nowait((self.command_config, event))

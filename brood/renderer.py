@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from random import choice
 from shutil import get_terminal_size
-from typing import Dict, Literal, Mapping, Type
+from typing import Dict, Literal, Mapping, Tuple, Type
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -25,9 +25,9 @@ class Renderer:
     config: RendererConfig
     console: Console
 
-    process_messages: Queue
-    internal_messages: Queue
-    process_events: Queue
+    process_messages: Queue[Tuple[CommandConfig, Message]]
+    internal_messages: Queue[Message]
+    process_events: Queue[ProcessEvent]
 
     def available_process_width(self, command: CommandConfig) -> int:
         raise NotImplementedError
@@ -133,7 +133,7 @@ class LogRenderer(Renderer):
             screen=False,
         ) as live:
             while True:
-                event: ProcessEvent = await self.process_events.get()
+                event = await self.process_events.get()
 
                 if event.type is EventType.Started:
                     p = Progress(

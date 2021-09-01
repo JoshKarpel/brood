@@ -120,7 +120,7 @@ class LogRenderer(Renderer):
 
         def refresh() -> None:
             table = Table.grid(expand=True)
-            for v in state.values():
+            for k, v in sorted(state.items(), key=lambda kv: kv[0].process.pid):
                 table.add_row(v)  # type: ignore
 
             live.update(Group(rule, table))

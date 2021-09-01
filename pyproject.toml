@@ -36,7 +36,7 @@ pytest-cov = "^2.12.1"
 brood = 'brood.main:app'
 
 [tool.pytest.ini_options]
-addopts = ["--strict-markers"]
+addopts = ["--strict-markers", "-Werror"]
 testpaths = ["tests", "brood"]
 
 [tool.mypy]

@@ -1,19 +1,101 @@
 from __future__ import annotations
 
+import shlex
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Literal, Set, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Set, Union
 
 import rtoml
 import yaml
 from identify import identify
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveFloat
 
-from brood.command import CommandConfig
 from brood.errors import UnknownFormat
-from brood.renderer import LogRendererConfig, NullRendererConfig
 
 JSONDict = Dict[str, Any]
+
+
+class BaseConfig(BaseModel):
+    class Config:
+        frozen = True
+        use_enum_values = True
+
+    def __hash__(self):
+        return hash(self.__class__) + hash(
+            tuple(v if not isinstance(v, list) else hash(tuple(v)) for v in self.__dict__.values())
+        )
+
+
+class RestartConfig(BaseConfig):
+    type: Literal["restart"] = "restart"
+
+    restart_on_exit: bool = True
+    delay: PositiveFloat = 5
+
+
+class WatchConfig(BaseConfig):
+    type: Literal["watch"] = "watch"
+
+    paths: List[str] = Field(default_factory=list)
+    poll: bool = False
+
+    allow_multiple: bool = False
+
+
+class OnceConfig(BaseConfig):
+    type: Literal["once"] = "once"
+
+
+class CommandConfig(BaseConfig):
+    command: Union[str, List[str]]
+    shutdown: Optional[Union[str, List[str]]]
+
+    tag: str = ""
+
+    prefix: Optional[str] = None
+    prefix_style: Optional[str] = None
+    message_style: Optional[str] = None
+
+    starter: Union[RestartConfig, WatchConfig] = RestartConfig()
+
+    @property
+    def command_string(self) -> str:
+        return normalize_command(self.command)
+
+    @property
+    def shutdown_string(self) -> Optional[str]:
+        if self.shutdown is None:
+            return None
+
+        return normalize_command(self.shutdown)
+
+
+def normalize_command(command: Union[str, List[str]]) -> str:
+    if isinstance(command, list):
+        return shlex.join(command)
+    else:
+        return command
+
+
+class RendererConfig(BaseConfig):
+    pass
+
+
+class NullRendererConfig(RendererConfig):
+    type: Literal["null"] = "null"
+
+
+class LogRendererConfig(RendererConfig):
+    type: Literal["log"] = "log"
+
+    prefix: str = "{timestamp} {tag} "
+
+    prefix_style: str = ""
+    message_style: str = ""
+
+    internal_prefix: str = "{timestamp} "
+    internal_prefix_style: str = "dim"
+    internal_message_style: str = "dim"
 
 
 class FailureMode(str, Enum):
@@ -24,7 +106,7 @@ class FailureMode(str, Enum):
 ConfigFormat = Literal["json", "toml", "yaml"]
 
 
-class BroodConfig(BaseModel):
+class BroodConfig(BaseConfig):
     failure_mode: FailureMode = FailureMode.CONTINUE
 
     verbose: bool = False

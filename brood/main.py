@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import shutil
 from pathlib import Path
 
 from rich.console import Console
@@ -29,7 +30,7 @@ def run(
     debug: bool = False,
 ) -> None:
     console = Console()
-    install(console=console, show_locals=True)
+    install(console=console, show_locals=True, width=shutil.get_terminal_size().columns)
 
     config_ = BroodConfig.load(config)
 
@@ -38,7 +39,7 @@ def run(
         verbose = True
 
     if verbose:
-        config_.verbose = True
+        config_ = config_.copy(update={"verbose": verbose})
         console.print(
             Panel(
                 JSON.from_data(config_.dict()),

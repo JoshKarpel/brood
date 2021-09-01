@@ -1,67 +1,25 @@
 from __future__ import annotations
 
 import os
-import shlex
 from asyncio import Queue, create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, Process
 from dataclasses import dataclass
-from functools import cached_property
-from typing import List, Literal, Optional, Union
+from enum import Enum
+from typing import Optional
 
-from pydantic import BaseModel, Field, PositiveFloat
-
+from brood.config import CommandConfig
 from brood.message import Message
 
 
-class RestartConfig(BaseModel):
-    type: Literal["restart"] = "restart"
-
-    restart_on_exit: bool = True
-    delay: PositiveFloat = 5
+class EventType(Enum):
+    Started = "started"
+    Stopped = "stopped"
 
 
-class WatchConfig(BaseModel):
-    type: Literal["watch"] = "watch"
-
-    paths: List[str] = Field(default_factory=list)
-    poll: bool = False
-
-    allow_multiple: bool = False
-
-
-class OnceConfig(BaseModel):
-    type: Literal["once"] = "once"
-
-
-class CommandConfig(BaseModel):
-    command: Union[str, List[str]]
-    shutdown: Optional[Union[str, List[str]]]
-
-    tag: str = ""
-
-    prefix: Optional[str] = None
-    prefix_style: Optional[str] = None
-    message_style: Optional[str] = None
-
-    starter: Union[RestartConfig, WatchConfig] = RestartConfig()
-
-    @property
-    def command_string(self) -> str:
-        return normalize_command(self.command)
-
-    @property
-    def shutdown_string(self) -> Optional[str]:
-        if self.shutdown is None:
-            return None
-
-        return normalize_command(self.shutdown)
-
-
-def normalize_command(command: Union[str, List[str]]) -> str:
-    if isinstance(command, list):
-        return shlex.join(command)
-    else:
-        return command
+@dataclass(frozen=True)
+class ProcessEvent:
+    manager: CommandManager
+    type: EventType
 
 
 @dataclass
@@ -69,10 +27,14 @@ class CommandManager:
     command_config: CommandConfig
     process_messages: Queue
     internal_messages: Queue
+    process_events: Queue
     width: int
     process: Process
 
     was_killed: bool = False
+
+    def __hash__(self):
+        return hash((self.__class__, self.command_config, self.process.pid))
 
     @classmethod
     async def start(
@@ -80,6 +42,7 @@ class CommandManager:
         command_config: CommandConfig,
         process_messages: Queue,
         internal_messages: Queue,
+        process_events: Queue,
         width: int,
         restart: bool,
     ) -> CommandManager:
@@ -96,13 +59,18 @@ class CommandManager:
             env={**os.environ, "FORCE_COLOR": "true", "COLUMNS": str(width)},
         )
 
-        return cls(
+        manager = cls(
             command_config=command_config,
             width=width,
             process=process,
             process_messages=process_messages,
             internal_messages=internal_messages,
+            process_events=process_events,
         )
+
+        await process_events.put(ProcessEvent(manager=manager, type=EventType.Started))
+
+        return manager
 
     def __post_init__(self) -> None:
         create_task(self.read())
@@ -129,6 +97,7 @@ class CommandManager:
 
     async def wait(self) -> CommandManager:
         await self.process.wait()
+        await self.process_events.put(ProcessEvent(manager=self, type=EventType.Stopped))
         return self
 
     async def read(self) -> None:

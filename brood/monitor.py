@@ -7,8 +7,8 @@ from typing import AsyncContextManager, Dict, List, Optional, Type
 
 from rich.console import Console
 
-from brood.command import CommandConfig, CommandManager, OnceConfig
-from brood.config import BroodConfig, FailureMode
+from brood.command import CommandManager
+from brood.config import BroodConfig, CommandConfig, FailureMode, OnceConfig
 from brood.message import Message
 from brood.renderer import RENDERERS, Renderer
 from brood.watch import FileWatcher, StartCommand
@@ -30,6 +30,7 @@ class Monitor(AsyncContextManager):
 
     process_messages: Queue = field(default_factory=Queue)
     internal_messages: Queue = field(default_factory=Queue)
+    process_events: Queue = field(default_factory=Queue)
 
     def __post_init__(self) -> None:
         self.renderer = RENDERERS[self.config.renderer.type](
@@ -37,6 +38,7 @@ class Monitor(AsyncContextManager):
             console=self.console,
             process_messages=self.process_messages,
             internal_messages=self.internal_messages,
+            process_events=self.process_events,
         )
 
     async def start(self, command_config: CommandConfig, restart: bool = False) -> CommandManager:
@@ -44,6 +46,7 @@ class Monitor(AsyncContextManager):
             command_config=command_config,
             process_messages=self.process_messages,
             internal_messages=self.internal_messages,
+            process_events=self.process_events,
             width=self.renderer.available_process_width(command_config),
             restart=restart,
         )
@@ -55,6 +58,7 @@ class Monitor(AsyncContextManager):
             (
                 self.handle_managers(),
                 self.handle_watchers(),
+                self.renderer.mount(),
                 self.renderer.run(),
             ),
             return_when=FIRST_EXCEPTION,
@@ -168,6 +172,7 @@ class Monitor(AsyncContextManager):
         managers = await gather(*(manager.wait() for manager in self.managers))
 
         for manager in managers:
+            self.managers.remove(manager)
             await self.internal_messages.put(
                 Message(
                     f"Command exited with code {manager.exit_code}: {manager.command_config.command_string!r}"

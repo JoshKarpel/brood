@@ -13,7 +13,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
-from brood.command import CommandConfig, WatchConfig
+from brood.config import CommandConfig, WatchConfig
 
 
 @dataclass
@@ -66,7 +66,8 @@ class StartCommand(FileSystemEventHandler):
             if get_ignorer(get_git_root(Path(event.src_path)) / ".gitignore")(event.src_path):
                 return
         except Exception:
-            return
+            # if anything goes wrong, we'll be generous and assume that we should have emitted an event
+            pass
 
         self.event_queue.put_nowait((self.command_config, event))
 

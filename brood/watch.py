@@ -59,7 +59,7 @@ class StartCommandHandler(FileSystemEventHandler):
     command_config: CommandConfig
     event_queue: Queue[Tuple[CommandConfig, FileSystemEvent]] = field(default_factory=Queue)
 
-    def on_modified(self, event: FileSystemEvent) -> None:
+    def on_any_event(self, event: FileSystemEvent) -> None:
         if event.is_directory:
             return
 

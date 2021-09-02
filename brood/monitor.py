@@ -138,7 +138,7 @@ class Monitor(AsyncContextManager["Monitor"]):
 
                 queue.task_done()
 
-            await gather(*(stop.stop() for stop in stops))
+            await gather(*(stop.terminate() for stop in stops))
 
             await gather(
                 *(
@@ -162,14 +162,14 @@ class Monitor(AsyncContextManager["Monitor"]):
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> Optional[bool]:
-        await self.stop()
+        await self.terminate()
         await self.wait()
         await self.shutdown()
         await self.renderer.run(drain=True)
         return None
 
-    async def stop(self) -> None:
-        await gather(*(manager.stop() for manager in self.managers))
+    async def terminate(self) -> None:
+        await gather(*(manager.terminate() for manager in self.managers))
 
         for watcher in self.watchers:
             watcher.stop()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from asyncio import Queue, create_subprocess_shell, create_task, sleep
-from asyncio.subprocess import PIPE, Process
+from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Tuple
@@ -53,8 +53,7 @@ class CommandManager:
         process = await create_subprocess_shell(
             command_config.command_string,
             stdout=PIPE,
-            stderr=PIPE,
-            shell=True,
+            stderr=STDOUT,
             env={**os.environ, "FORCE_COLOR": "true", "COLUMNS": str(width)},
         )
 
@@ -72,7 +71,7 @@ class CommandManager:
         return manager
 
     def __post_init__(self) -> None:
-        create_task(self.read())
+        create_task(self.read_output())
 
     @property
     def exit_code(self) -> Optional[int]:
@@ -82,7 +81,7 @@ class CommandManager:
     def has_exited(self) -> bool:
         return self.exit_code is not None
 
-    async def stop(self) -> None:
+    async def terminate(self) -> None:
         if self.has_exited:
             return None
 
@@ -111,22 +110,14 @@ class CommandManager:
         await self.process_events.put(ProcessEvent(manager=self, type=EventType.Stopped))
         return self
 
-    async def stop_and_wait(self) -> CommandManager:
-        await self.stop()
-        return await self.wait()
-
-    async def kill_and_wait(self) -> CommandManager:
-        await self.kill()
-        return await self.wait()
-
-    async def read(self) -> None:
-        if self.process.stdout is None:
+    async def read_output(self) -> None:
+        if self.process.stdout is None:  # pragma: unreachable
             raise Exception(f"{self.process} does not have an associated stream reader")
 
         while True:
             line = await self.process.stdout.readline()
             if not line:
-                return
+                break
 
             await self.process_messages.put(
                 (self.command_config, Message(line.decode("utf-8").rstrip()))

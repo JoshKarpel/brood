@@ -9,4 +9,5 @@
 [![GitHub issues](https://img.shields.io/github/issues/JoshKarpel/brood)](https://github.com/JoshKarpel/brood/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/JoshKarpel/brood)](https://github.com/JoshKarpel/brood/pulls)
 
-A flexible concurrent command runner, inspired by [Concurrently](https://www.npmjs.com/package/concurrently).
+A flexible concurrent command runner,
+inspired by [Concurrently](https://github.com/open-cli-tools/concurrently) and powered by [Rich](https://github.com/willmcgugan/rich).

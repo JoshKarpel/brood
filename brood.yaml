@@ -1,14 +1,14 @@
 commands:
-  - command: "pytest --cov"
-    tag: "tests"
+  - name: "tests"
+    command: "pytest --cov"
     prefix_style: "green"
     starter:
       type: "watch"
       paths: [ "brood/", "tests/" ]
 
-  - command: "dmypy run"
+  - name: "types"
+    command: "dmypy run"
     shutdown: "dmypy stop"
-    tag: "types"
     prefix_style: "cyan"
     starter:
       type: "watch"

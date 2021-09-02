@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.json import JSON
 from rich.panel import Panel
 from rich.traceback import install
-from typer import Argument, Typer
+from typer import Argument, Option, Typer
 
 from brood.config import BroodConfig
 from brood.constants import PACKAGE_NAME, __version__
@@ -24,22 +24,28 @@ def run(
         readable=True,
         show_default=True,
         envvar="BROOD_CONFIG",
+        help="The path to the configuration file to execute.",
     ),
-    verbose: bool = False,
-    dry: bool = False,
-    debug: bool = False,
+    dry: bool = Option(False, help="If enabled, do not run actually run any commands."),
+    verbose: bool = Option(
+        False, help=f"If enabled, {PACKAGE_NAME} will print extra information as it runs."
+    ),
+    debug: bool = Option(
+        False,
+        help=f"If enabled, {PACKAGE_NAME} will run with the underlying event loop in debug mode.",
+    ),
 ) -> None:
+    """
+    Execute a configuration.
+    """
     console = Console()
     install(console=console, show_locals=True, width=shutil.get_terminal_size().columns)
 
     config_ = BroodConfig.load(config)
 
     verbose = verbose or debug
-    if config_.verbose:
-        verbose = True
 
     if verbose:
-        config_ = config_.copy(update={"verbose": verbose})
         console.print(
             Panel(
                 JSON.from_data(config_.dict()),
@@ -60,6 +66,27 @@ def run(
 async def _run(config: BroodConfig, console: Console) -> None:
     async with Monitor(config=config, console=console) as coordinator:
         await coordinator.run()
+
+
+@app.command()
+def schema(plain: bool = Option(False)) -> None:
+    """
+    Display the schema for the Brood configuration file.
+    """
+    console = Console()
+
+    j = BroodConfig.schema_json(indent=2)
+
+    if plain:
+        print(j)
+    else:
+        console.print(
+            Panel(
+                JSON(j),
+                title="Configuration Schema",
+                title_align="left",
+            ),
+        )
 
 
 @app.command()

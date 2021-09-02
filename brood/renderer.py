@@ -190,7 +190,7 @@ class LogRenderer(Renderer):
                 Text.from_markup(
                     (command.prefix or self.config.prefix).format_map(
                         {
-                            "tag": command.tag,
+                            "name": command.name,
                             "timestamp": message.timestamp,
                         }
                     ),

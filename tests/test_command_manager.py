@@ -6,6 +6,7 @@ from pytest_mock import MockerFixture
 
 from brood.command import CommandManager
 from brood.config import CommandConfig, OnceConfig
+from brood.constants import ON_WINDOWS
 
 
 @pytest.fixture
@@ -29,7 +30,7 @@ async def once_manager(once_config: CommandConfig) -> CommandManager:
     )
 
 
-@pytest.mark.parametrize("command", ["echo 'hi'", "echo 'hi' 1>&2"])
+@pytest.mark.parametrize("command", ["echo hi", "echo hi 1>&2"])
 async def test_command_output_to_process_message(
     once_manager: CommandManager, command: str
 ) -> None:
@@ -63,7 +64,7 @@ async def test_can_terminate_before_completion(once_manager: CommandManager, com
 
     await once_manager.wait()
 
-    assert once_manager.exit_code == -15
+    assert once_manager.exit_code == (-15 if not ON_WINDOWS else 1)
 
 
 @pytest.mark.parametrize("command", ["sleep 1000"])
@@ -72,24 +73,24 @@ async def test_can_kill_before_completion(once_manager: CommandManager, command:
 
     await once_manager.wait()
 
-    assert once_manager.exit_code == -9
+    assert once_manager.exit_code == (-9 if not ON_WINDOWS else 1)
 
 
-@pytest.mark.parametrize("command", ["echo 'hi'"])
+@pytest.mark.parametrize("command", ["echo hi"])
 async def test_can_stop_after_exit(once_manager: CommandManager, command: str) -> None:
     await once_manager.wait()
 
     await once_manager.terminate()
 
 
-@pytest.mark.parametrize("command", ["echo 'hi'"])
+@pytest.mark.parametrize("command", ["echo hi"])
 async def test_can_kill_after_exit(once_manager: CommandManager, command: str) -> None:
     await once_manager.wait()
 
     await once_manager.kill()
 
 
-@pytest.mark.parametrize("command", ["echo 'hi'"])
+@pytest.mark.parametrize("command", ["echo hi"])
 async def test_delay_induces_sleep(
     once_config: CommandConfig, command: str, mocker: MockerFixture
 ) -> None:

@@ -1,74 +1,35 @@
 from __future__ import annotations
 
 import os
-import shlex
 from asyncio import Queue, create_subprocess_shell, create_task, sleep
-from asyncio.subprocess import PIPE, Process
+from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass
-from functools import cached_property
-from typing import List, Literal, Optional, Union
+from enum import Enum
+from typing import Optional, Tuple
 
-from pydantic import BaseModel, Field, PositiveFloat
-
+from brood.config import CommandConfig
 from brood.message import Message
 
 
-class RestartConfig(BaseModel):
-    type: Literal["restart"] = "restart"
-
-    restart_on_exit: bool = True
-    delay: PositiveFloat = 5
+class EventType(Enum):
+    Started = "started"
+    Stopped = "stopped"
 
 
-class WatchConfig(BaseModel):
-    type: Literal["watch"] = "watch"
-
-    paths: List[str] = Field(default_factory=list)
-    poll: bool = False
-
-    allow_multiple: bool = False
-
-
-class OnceConfig(BaseModel):
-    type: Literal["once"] = "once"
-
-
-class CommandConfig(BaseModel):
-    command: Union[str, List[str]]
-    shutdown: Optional[Union[str, List[str]]]
-
-    tag: str = ""
-
-    prefix: Optional[str] = None
-    prefix_style: Optional[str] = None
-    message_style: Optional[str] = None
-
-    starter: Union[RestartConfig, WatchConfig] = RestartConfig()
-
-    @property
-    def command_string(self) -> str:
-        return normalize_command(self.command)
-
-    @property
-    def shutdown_string(self) -> Optional[str]:
-        if self.shutdown is None:
-            return None
-
-        return normalize_command(self.shutdown)
-
-
-def normalize_command(command: Union[str, List[str]]) -> str:
-    if isinstance(command, list):
-        return shlex.join(command)
-    else:
-        return command
+@dataclass(frozen=True)
+class ProcessEvent:
+    manager: CommandManager
+    type: EventType
 
 
 @dataclass
 class CommandManager:
     command_config: CommandConfig
-    process_messages: Queue
-    internal_messages: Queue
+
+    process_messages: Queue[Tuple[CommandConfig, Message]]
+    internal_messages: Queue[Message]
+    process_events: Queue[ProcessEvent]
+
     width: int
     process: Process
 
@@ -78,12 +39,13 @@ class CommandManager:
     async def start(
         cls,
         command_config: CommandConfig,
-        process_messages: Queue,
-        internal_messages: Queue,
+        process_messages: Queue[Tuple[CommandConfig, Message]],
+        internal_messages: Queue[Message],
+        process_events: Queue[ProcessEvent],
         width: int,
-        restart: bool,
+        delay: bool,
     ) -> CommandManager:
-        if restart and command_config.starter.type == "restart":
+        if delay:
             await sleep(command_config.starter.delay)
 
         await internal_messages.put(Message(f"Started command: {command_config.command_string!r}"))
@@ -91,21 +53,25 @@ class CommandManager:
         process = await create_subprocess_shell(
             command_config.command_string,
             stdout=PIPE,
-            stderr=PIPE,
-            shell=True,
+            stderr=STDOUT,
             env={**os.environ, "FORCE_COLOR": "true", "COLUMNS": str(width)},
         )
 
-        return cls(
+        manager = cls(
             command_config=command_config,
             width=width,
             process=process,
             process_messages=process_messages,
             internal_messages=internal_messages,
+            process_events=process_events,
         )
 
+        await process_events.put(ProcessEvent(manager=manager, type=EventType.Started))
+
+        return manager
+
     def __post_init__(self) -> None:
-        create_task(self.read())
+        create_task(self.read_output())
 
     @property
     def exit_code(self) -> Optional[int]:
@@ -115,31 +81,47 @@ class CommandManager:
     def has_exited(self) -> bool:
         return self.exit_code is not None
 
-    async def stop(self) -> None:
+    async def terminate(self) -> None:
         if self.has_exited:
             return None
 
         self.was_killed = True
 
         await self.internal_messages.put(
-            Message(f"Terminating command: {self.command_config.command_string!r}")
+            Message(f"Stopping command: {self.command_config.command_string!r}")
         )
 
         self.process.terminate()
 
+    async def kill(self) -> None:
+        if self.has_exited:
+            return None
+
+        self.was_killed = True
+
+        await self.internal_messages.put(
+            Message(f"Killing command: {self.command_config.command_string!r}")
+        )
+
+        self.process.kill()
+
     async def wait(self) -> CommandManager:
         await self.process.wait()
+        await self.process_events.put(ProcessEvent(manager=self, type=EventType.Stopped))
         return self
 
-    async def read(self) -> None:
-        if self.process.stdout is None:
+    async def read_output(self) -> None:
+        if self.process.stdout is None:  # pragma: unreachable
             raise Exception(f"{self.process} does not have an associated stream reader")
 
         while True:
             line = await self.process.stdout.readline()
             if not line:
-                return
+                break
 
             await self.process_messages.put(
                 (self.command_config, Message(line.decode("utf-8").rstrip()))
             )
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.command_config, self.process.pid))

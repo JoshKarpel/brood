@@ -1,4 +1,18 @@
 [[package]]
+name = "alt-pytest-asyncio"
+version = "0.5.4"
+description = "Alternative pytest plugin to pytest-asyncio"
+category = "dev"
+optional = false
+python-versions = ">= 3.5"
+
+[package.dependencies]
+pytest = ">=3.0.6"
+
+[package.extras]
+tests = ["pytest (==5.4.3)", "noseOfYeti (==2.0.2)", "nest-asyncio (==1.0.0)"]
+
+[[package]]
 name = "atomicwrites"
 version = "1.4.0"
 description = "Atomic file writes."
@@ -475,9 +489,12 @@ watchmedo = ["PyYAML (>=3.10)", "argh (>=0.24.1)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9"
-content-hash = "71fb14008a2524aaa782d0ad73e8cd859c46720493992391d728b7cb69d5ba53"
+content-hash = "7b98587620f40bdcad3d3271066b37dec78edd3b1f13cee5127d001cc21d9754"
 
 [metadata.files]
+alt-pytest-asyncio = [
+    {file = "alt_pytest_asyncio-0.5.4.tar.gz", hash = "sha256:335d03616c32c40126a45fb2ab8188eb4f72df0dbc1a75c2e7bfc9a13d6ffde0"},
+]
 atomicwrites = [
     {file = "atomicwrites-1.4.0-py2.py3-none-any.whl", hash = "sha256:6d1784dea7c0c8d4a5172b6c620f40b6e4cbfdf96d783691f2e1302a7b88e197"},
     {file = "atomicwrites-1.4.0.tar.gz", hash = "sha256:ae70396ad1a434f9c7046fd2dd196fc04b12f9e91ffb859164193be8b6168a7a"},

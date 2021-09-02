@@ -5,19 +5,20 @@ from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from types import TracebackType
-from typing import Callable, ContextManager, Optional, Type
+from typing import Callable, ContextManager, Optional, Tuple, Type
 
 import git
+from git import NoSuchPathError
 from gitignore_parser import parse_gitignore
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
-from brood.command import CommandConfig, WatchConfig
+from brood.config import CommandConfig, WatchConfig
 
 
 @dataclass
-class FileWatcher(ContextManager):
+class FileWatcher(ContextManager["FileWatcher"]):
     config: WatchConfig
     event_handler: FileSystemEventHandler
 
@@ -54,19 +55,23 @@ class FileWatcher(ContextManager):
 
 
 @dataclass(frozen=True)
-class StartCommand(FileSystemEventHandler):
+class StartCommandHandler(FileSystemEventHandler):
     command_config: CommandConfig
-    event_queue: Queue = field(default_factory=Queue)
+    event_queue: Queue[Tuple[CommandConfig, FileSystemEvent]] = field(default_factory=Queue)
 
-    def on_modified(self, event: FileSystemEvent) -> None:
+    def on_any_event(self, event: FileSystemEvent) -> None:
         if event.is_directory:
             return
 
         try:
-            if get_ignorer(get_git_root(Path(event.src_path)) / ".gitignore")(event.src_path):
+            git_root = get_git_root(Path(event.src_path))
+
+            if get_ignorer(git_root / ".gitignore")(event.src_path):
                 return
-        except Exception:
+        except NoSuchPathError:
             return
+        except Exception:
+            pass
 
         self.event_queue.put_nowait((self.command_config, event))
 

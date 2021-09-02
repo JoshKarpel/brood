@@ -1,9 +1,11 @@
+from typing import List, Union
+
 import pytest
 from _pytest.tmpdir import TempPathFactory
 from hypothesis import given
 from hypothesis import strategies as st
 
-from brood.config import BroodConfig, ConfigFormat
+from brood.config import BroodConfig, ConfigFormat, normalize_command
 from brood.errors import UnknownFormat
 
 
@@ -55,3 +57,15 @@ def test_load_with_unknown_format(
 
     with pytest.raises(UnknownFormat):
         assert config == BroodConfig.load(p)
+
+
+@pytest.mark.parametrize(
+    "cmd, expected",
+    [
+        ("foo", "foo"),
+        (["foo"], "foo"),
+        (["foo", "bar"], "foo bar"),
+    ],
+)
+def test_normalize_command(cmd: Union[str, List[str]], expected: str) -> None:
+    assert normalize_command(cmd) == expected

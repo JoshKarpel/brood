@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, Queue, Task, create_task, gather, sleep, wait
+from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, Queue, QueueEmpty, gather, sleep, wait
 from dataclasses import dataclass, field
 from types import TracebackType
-from typing import AsyncContextManager, Dict, List, Optional, Type
+from typing import AsyncContextManager, List, Optional, Tuple, Type, TypeVar
 
 from rich.console import Console
+from watchdog.events import FileSystemEvent
 
-from brood.command import CommandConfig, CommandManager, OnceConfig
-from brood.config import BroodConfig, FailureMode
+from brood.command import CommandManager, ProcessEvent
+from brood.config import BroodConfig, CommandConfig, FailureMode, OnceConfig
 from brood.message import Message
 from brood.renderer import RENDERERS, Renderer
-from brood.watch import FileWatcher, StartCommand
+from brood.watch import FileWatcher, StartCommandHandler
 
 
 class KillOthers(Exception):
@@ -19,7 +20,7 @@ class KillOthers(Exception):
 
 
 @dataclass
-class Monitor(AsyncContextManager):
+class Monitor(AsyncContextManager["Monitor"]):
     config: BroodConfig
 
     console: Console
@@ -28,8 +29,9 @@ class Monitor(AsyncContextManager):
     managers: List[CommandManager] = field(default_factory=list)
     watchers: List[FileWatcher] = field(default_factory=list)
 
-    process_messages: Queue = field(default_factory=Queue)
-    internal_messages: Queue = field(default_factory=Queue)
+    process_messages: Queue[Tuple[CommandConfig, Message]] = field(default_factory=Queue)
+    internal_messages: Queue[Message] = field(default_factory=Queue)
+    process_events: Queue[ProcessEvent] = field(default_factory=Queue)
 
     def __post_init__(self) -> None:
         self.renderer = RENDERERS[self.config.renderer.type](
@@ -37,15 +39,17 @@ class Monitor(AsyncContextManager):
             console=self.console,
             process_messages=self.process_messages,
             internal_messages=self.internal_messages,
+            process_events=self.process_events,
         )
 
-    async def start(self, command_config: CommandConfig, restart: bool = False) -> CommandManager:
+    async def start(self, command_config: CommandConfig, delay: bool = False) -> CommandManager:
         manager = await CommandManager.start(
             command_config=command_config,
             process_messages=self.process_messages,
             internal_messages=self.internal_messages,
+            process_events=self.process_events,
             width=self.renderer.available_process_width(command_config),
-            restart=restart,
+            delay=delay,
         )
         self.managers.append(manager)
         return manager
@@ -55,6 +59,7 @@ class Monitor(AsyncContextManager):
             (
                 self.handle_managers(),
                 self.handle_watchers(),
+                self.renderer.mount(),
                 self.renderer.run(),
             ),
             return_when=FIRST_EXCEPTION,
@@ -106,42 +111,47 @@ class Monitor(AsyncContextManager):
                     if manager.command_config.starter.restart_on_exit:
                         await self.start(
                             command_config=manager.command_config,
-                            restart=True,
+                            delay=True,
                         )
 
     async def handle_watchers(self) -> None:
-        queue: Queue = Queue()
+        queue: Queue[Tuple[CommandConfig, FileSystemEvent]] = Queue()
 
-        for command in self.config.commands:
-            if command.starter.type == "watch":
-                handler = StartCommand(command, queue)
-                watcher = FileWatcher(command.starter, handler)
+        for config in self.config.commands:
+            if config.starter.type == "watch":
+                handler = StartCommandHandler(config, queue)
+                watcher = FileWatcher(config.starter, handler)
                 watcher.start()
                 self.watchers.append(watcher)
 
-        tasks: Dict[int, Task] = {}
-
         while True:
-            command, event = await queue.get()
+            # unique-ify on configs
+            starts = {}
+            stops = set()
+            for config, event in await drain_queue(queue):
+                starts[config] = event
 
-            if command.starter.type == "watch":
-                if not command.starter.allow_multiple:
+                if config.starter.type == "watch" and not config.starter.allow_multiple:
                     for manager in self.managers:
-                        if manager.command_config is command:
-                            await manager.stop()
-                            await manager.wait()
+                        if manager.command_config is config:
+                            stops.add(manager)
 
-            previous = tasks.get(id(command))
-            if previous:
-                previous.cancel()
-            else:
-                await self.internal_messages.put(
-                    Message(
-                        f"File {event.src_path} was {event.event_type}, starting command: {command.command_string!r}"
+                queue.task_done()
+
+            await gather(*(stop.terminate() for stop in stops))
+
+            await gather(
+                *(
+                    self.internal_messages.put(
+                        Message(
+                            f"File {event.src_path} was {event.event_type}, starting command: {config.command_string!r}"
+                        )
                     )
+                    for config, event in starts.items()
                 )
+            )
 
-            tasks[id(command)] = create_task(self.start(command_config=command))
+            await gather(*(self.start(command_config=config) for config in starts))
 
     async def __aenter__(self) -> Monitor:
         return self
@@ -152,14 +162,14 @@ class Monitor(AsyncContextManager):
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> Optional[bool]:
-        await self.stop()
+        await self.terminate()
         await self.wait()
         await self.shutdown()
         await self.renderer.run(drain=True)
         return None
 
-    async def stop(self) -> None:
-        await gather(*(manager.stop() for manager in self.managers))
+    async def terminate(self) -> None:
+        await gather(*(manager.terminate() for manager in self.managers))
 
         for watcher in self.watchers:
             watcher.stop()
@@ -168,6 +178,7 @@ class Monitor(AsyncContextManager):
         managers = await gather(*(manager.wait() for manager in self.managers))
 
         for manager in managers:
+            self.managers.remove(manager)
             await self.internal_messages.put(
                 Message(
                     f"Command exited with code {manager.exit_code}: {manager.command_config.command_string!r}"
@@ -186,3 +197,24 @@ class Monitor(AsyncContextManager):
 
         await gather(*(self.start(command) for command in shutdown_commands))
         await self.wait()
+
+
+T = TypeVar("T")
+
+
+async def drain_queue(queue: Queue[T], buffer: Optional[float] = 1) -> List[T]:
+    items = [await queue.get()]
+
+    while True:
+        try:
+            items.append(queue.get_nowait())
+        except QueueEmpty:
+            if buffer:
+                await sleep(buffer)
+
+                if not queue.empty():
+                    continue
+                else:
+                    break
+
+    return items

@@ -5,7 +5,9 @@
 
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/JoshKarpel/brood/main.svg)](https://results.pre-commit.ci/latest/github/JoshKarpel/brood/main)
 [![codecov](https://codecov.io/gh/JoshKarpel/brood/branch/main/graph/badge.svg?token=2sjP4V0AfY)](https://codecov.io/gh/JoshKarpel/brood)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 [![GitHub issues](https://img.shields.io/github/issues/JoshKarpel/brood)](https://github.com/JoshKarpel/brood/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/JoshKarpel/brood)](https://github.com/JoshKarpel/brood/pulls)
+
+A flexible concurrent command runner,
+inspired by [Concurrently](https://github.com/open-cli-tools/concurrently) and powered by [Rich](https://github.com/willmcgugan/rich).

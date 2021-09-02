@@ -12,6 +12,7 @@ from brood.constants import ON_WINDOWS
 @pytest.fixture
 def once_config(command: str) -> CommandConfig:
     return CommandConfig(
+        name="test",
         command=command,
         starter=OnceConfig(),
         shell=True,

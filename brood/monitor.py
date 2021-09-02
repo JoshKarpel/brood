@@ -12,7 +12,7 @@ from brood.command import CommandManager, ProcessEvent
 from brood.config import BroodConfig, CommandConfig, FailureMode, OnceConfig
 from brood.message import Message
 from brood.renderer import RENDERERS, Renderer
-from brood.watch import FileWatcher, StartCommand
+from brood.watch import FileWatcher, StartCommandHandler
 
 
 class KillOthers(Exception):
@@ -119,7 +119,7 @@ class Monitor(AsyncContextManager["Monitor"]):
 
         for config in self.config.commands:
             if config.starter.type == "watch":
-                handler = StartCommand(config, queue)
+                handler = StartCommandHandler(config, queue)
                 watcher = FileWatcher(config.starter, handler)
                 watcher.start()
                 self.watchers.append(watcher)

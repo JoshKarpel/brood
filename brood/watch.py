@@ -55,7 +55,7 @@ class FileWatcher(ContextManager["FileWatcher"]):
 
 
 @dataclass(frozen=True)
-class StartCommand(FileSystemEventHandler):
+class StartCommandHandler(FileSystemEventHandler):
     command_config: CommandConfig
     event_queue: Queue[Tuple[CommandConfig, FileSystemEvent]] = field(default_factory=Queue)
 

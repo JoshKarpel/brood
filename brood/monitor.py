@@ -34,7 +34,8 @@ class Monitor(AsyncContextManager["Monitor"]):
     process_events: Queue[ProcessEvent] = field(default_factory=Queue)
 
     def __post_init__(self) -> None:
-        self.renderer = RENDERERS[self.config.renderer.type](
+        renderer_type = RENDERERS[self.config.renderer.type]
+        self.renderer = renderer_type(
             config=self.config.renderer,
             console=self.console,
             process_messages=self.process_messages,

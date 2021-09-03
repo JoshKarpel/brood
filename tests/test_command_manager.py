@@ -15,7 +15,6 @@ def once_config(command: str) -> CommandConfig:
         name="test",
         command=command,
         starter=OnceConfig(),
-        shell=True,
     )
 
 

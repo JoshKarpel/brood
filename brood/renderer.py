@@ -38,8 +38,8 @@ class Renderer:
     async def run(self, drain: bool = False) -> None:
         done, pending = await wait(
             (
-                self.handle_internal_messages(drain=drain),
-                self.handle_process_messages(drain=drain),
+                create_task(self.handle_internal_messages(drain=drain)),
+                create_task(self.handle_process_messages(drain=drain)),
             ),
             return_when=ALL_COMPLETED if drain else FIRST_EXCEPTION,
         )

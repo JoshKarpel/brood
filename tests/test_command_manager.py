@@ -5,29 +5,8 @@ import pytest
 from pytest_mock import MockerFixture
 
 from brood.command import CommandManager
-from brood.config import CommandConfig, OnceConfig
+from brood.config import CommandConfig
 from brood.constants import ON_WINDOWS
-
-
-@pytest.fixture
-def once_config(command: str) -> CommandConfig:
-    return CommandConfig(
-        name="test",
-        command=command,
-        starter=OnceConfig(),
-    )
-
-
-@pytest.fixture
-async def once_manager(once_config: CommandConfig) -> CommandManager:
-    return await CommandManager.start(
-        command_config=once_config,
-        process_messages=Queue(),
-        internal_messages=Queue(),
-        process_events=Queue(),
-        width=80,
-        delay=False,
-    )
 
 
 @pytest.mark.parametrize("command", ["echo hi", "echo hi 1>&2"])

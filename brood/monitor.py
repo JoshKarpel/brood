@@ -43,7 +43,12 @@ class Monitor(AsyncContextManager["Monitor"]):
             process_events=self.process_events,
         )
 
-    async def start(self, command_config: CommandConfig, delay: bool = False) -> CommandManager:
+    async def start(self) -> None:
+        await gather(*(self.start_command(command) for command in self.config.commands))
+
+    async def start_command(
+        self, command_config: CommandConfig, delay: bool = False
+    ) -> CommandManager:
         manager = await CommandManager.start(
             command_config=command_config,
             process_messages=self.process_messages,
@@ -78,8 +83,6 @@ class Monitor(AsyncContextManager["Monitor"]):
                 )
 
     async def handle_managers(self) -> None:
-        await gather(*(self.start(command) for command in self.config.commands))
-
         while True:
             if not self.managers:
                 await sleep(0.1)
@@ -110,7 +113,7 @@ class Monitor(AsyncContextManager["Monitor"]):
 
                 if manager.command_config.starter.type == "restart":
                     if manager.command_config.starter.restart_on_exit:
-                        await self.start(
+                        await self.start_command(
                             command_config=manager.command_config,
                             delay=True,
                         )
@@ -152,9 +155,10 @@ class Monitor(AsyncContextManager["Monitor"]):
                 )
             )
 
-            await gather(*(self.start(command_config=config) for config in starts))
+            await gather(*(self.start_command(command_config=config) for config in starts))
 
     async def __aenter__(self) -> Monitor:
+        await self.start()
         return self
 
     async def __aexit__(
@@ -196,7 +200,7 @@ class Monitor(AsyncContextManager["Monitor"]):
             if command.shutdown
         ]
 
-        await gather(*(self.start(command) for command in shutdown_commands))
+        await gather(*(self.start_command(command) for command in shutdown_commands))
         await self.wait()
 
 

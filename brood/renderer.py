@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from random import choice
 from shutil import get_terminal_size
-from typing import Dict, Literal, Mapping, Tuple, Type
+from typing import Dict, Literal, Mapping, Type
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -15,9 +15,9 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
-from brood.command import CommandManager, EventType, ProcessEvent
+from brood.command import CommandManager, Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
-from brood.message import Message
+from brood.message import CommandMessage, InternalMessage, Message
 
 
 @dataclass(frozen=True)
@@ -25,9 +25,8 @@ class Renderer:
     config: RendererConfig
     console: Console
 
-    process_messages: Queue[Tuple[CommandConfig, Message]]
-    internal_messages: Queue[Message]
-    process_events: Queue[ProcessEvent]
+    messages: Queue[Message]
+    events: Queue[Event]
 
     def available_process_width(self, command: CommandConfig) -> int:
         raise NotImplementedError
@@ -37,32 +36,26 @@ class Renderer:
 
     async def run(self, drain: bool = False) -> None:
         done, pending = await wait(
-            (
-                create_task(self.handle_internal_messages(drain=drain)),
-                create_task(self.handle_process_messages(drain=drain)),
-            ),
+            (create_task(self.handle_messages(drain=drain)),),
             return_when=ALL_COMPLETED if drain else FIRST_EXCEPTION,
         )
 
         for d in done:
             d.result()
 
-    async def handle_internal_messages(self, drain: bool = False) -> None:
-        while not drain or not self.internal_messages.empty():
-            message = await self.internal_messages.get()
-            await self.handle_internal_message(message)
-            self.internal_messages.task_done()
+    async def handle_messages(self, drain: bool = False) -> None:
+        while not drain or not self.messages.empty():
+            message = await self.messages.get()
+            if isinstance(message, InternalMessage):
+                await self.handle_internal_message(message)
+            elif isinstance(message, CommandMessage):
+                await self.handle_process_message(message)
+            self.messages.task_done()
 
-    async def handle_internal_message(self, message: Message) -> None:
+    async def handle_internal_message(self, message: InternalMessage) -> None:
         pass
 
-    async def handle_process_messages(self, drain: bool = False) -> None:
-        while not drain or not self.process_messages.empty():
-            command, message = await self.process_messages.get()
-            await self.handle_process_message(command, message)
-            self.process_messages.task_done()
-
-    async def handle_process_message(self, process: CommandConfig, message: Message) -> None:
+    async def handle_process_message(self, message: CommandMessage) -> None:
         pass
 
 
@@ -92,8 +85,8 @@ class TimeElapsedColumn(ProgressColumn):
 class LogRenderer(Renderer):
     config: LogRendererConfig
 
-    def available_process_width(self, command: CommandConfig) -> int:
-        text = self.render_process_message(command, Message(""))
+    def available_process_width(self, command_config: CommandConfig) -> int:
+        text = self.render_process_message(CommandMessage(text="", command_config=command_config))
         return get_terminal_size().columns - text.cell_len
 
     async def mount(self) -> None:
@@ -133,7 +126,7 @@ class LogRenderer(Renderer):
             screen=False,
         ) as live:
             while True:
-                event = await self.process_events.get()
+                event = await self.events.get()
 
                 if event.type is EventType.Started:
                     p = Progress(
@@ -161,7 +154,7 @@ class LogRenderer(Renderer):
 
                 refresh()
 
-    async def handle_internal_message(self, message: Message) -> None:
+    async def handle_internal_message(self, message: InternalMessage) -> None:
         text = (
             Text("")
             .append_text(
@@ -178,29 +171,29 @@ class LogRenderer(Renderer):
 
         self.console.print(text, soft_wrap=True)
 
-    async def handle_process_message(self, command: CommandConfig, message: Message) -> None:
-        text = self.render_process_message(command, message)
+    async def handle_process_message(self, message: CommandMessage) -> None:
+        text = self.render_process_message(message)
 
         self.console.print(text, soft_wrap=True)
 
-    def render_process_message(self, command: CommandConfig, message: Message) -> Text:
+    def render_process_message(self, message: CommandMessage) -> Text:
         return (
             Text("")
             .append_text(
                 Text.from_markup(
-                    (command.prefix or self.config.prefix).format_map(
+                    (message.command_config.prefix or self.config.prefix).format_map(
                         {
-                            "name": command.name,
+                            "name": message.command_config.name,
                             "timestamp": message.timestamp,
                         }
                     ),
-                    style=command.prefix_style or self.config.prefix_style,
+                    style=message.command_config.prefix_style or self.config.prefix_style,
                 )
             )
             .append_text(
                 Text(
                     message.text,
-                    style=command.message_style or self.config.message_style,
+                    style=message.command_config.message_style or self.config.message_style,
                 )
             )
         )

@@ -3,10 +3,12 @@ from typing import Tuple
 
 import pytest
 
-from brood.command import CommandManager, InternalMessage, ProcessEvent, ProcessMessage
+from brood.command import CommandManager, Event
 from brood.config import CommandConfig, OnceConfig
 from brood.constants import ON_WINDOWS
 from brood.fanout import Fanout
+from brood.message import CommandMessage, Message
+from brood.monitor import drain_queue
 
 
 @pytest.fixture
@@ -19,47 +21,50 @@ def once_config(command: str) -> CommandConfig:
 
 
 @pytest.fixture
-async def once_manager_(once_config: CommandConfig) -> Tuple[CommandManager, Queue[ProcessMessage]]:
-    process_events_fanout: Fanout[ProcessEvent] = Fanout()
+async def once_manager_(once_config: CommandConfig) -> Tuple[CommandManager, Queue[Message]]:
+    process_events_fanout: Fanout[Event] = Fanout()
 
-    internal_messages_fanout: Fanout[InternalMessage] = Fanout()
-
-    process_messages_fanout: Fanout[ProcessMessage] = Fanout()
-    process_messages_consumer = process_messages_fanout.consumer()
+    messages_fanout: Fanout[Message] = Fanout()
+    messages_consumer = messages_fanout.consumer()
 
     return (
         await CommandManager.start(
             command_config=once_config,
-            process_events=process_events_fanout,
-            internal_messages=internal_messages_fanout,
-            process_messages=process_messages_fanout,
+            events=process_events_fanout,
+            messages=messages_fanout,
             width=80,
             delay=False,
         ),
-        process_messages_consumer,
+        messages_consumer,
     )
 
 
 @pytest.fixture
-def once_manager(once_manager_: Tuple[CommandManager, Queue[ProcessMessage]]) -> CommandManager:
+def once_manager(once_manager_: Tuple[CommandManager, Queue[Message]]) -> CommandManager:
     return once_manager_[0]
 
 
 @pytest.fixture
-def process_messages(
-    once_manager_: Tuple[CommandManager, Queue[ProcessMessage]]
-) -> Queue[ProcessMessage]:
+def messages(once_manager_: Tuple[CommandManager, Queue[Message]]) -> Queue[Message]:
     return once_manager_[1]
 
 
 @pytest.mark.parametrize("command", ["echo hi", "echo hi 1>&2"])
-async def test_command_output_to_process_message(
-    once_manager: CommandManager, process_messages: Queue[ProcessMessage], command: str
+async def test_command_output_captured_as_command_message(
+    once_manager: CommandManager, messages: Queue[Message], command: str
 ) -> None:
-    config, message = await process_messages.get()
+    await once_manager.wait()
 
-    assert config is once_manager.command_config
+    command_messages = [
+        message for message in await drain_queue(messages) if isinstance(message, CommandMessage)
+    ]
+
+    assert len(command_messages) == 1
+
+    message = command_messages[0]
+
     assert message.text == "hi"
+    assert message.command_config is once_manager.command_config
 
 
 @pytest.mark.parametrize("command, exit_code", [("exit 0", 0), ("exit 1", 1)])

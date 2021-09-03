@@ -8,10 +8,10 @@ from typing import AsyncContextManager, List, Optional, Tuple, Type, TypeVar
 from rich.console import Console
 from watchdog.events import FileSystemEvent
 
-from brood.command import CommandManager, EventType, InternalMessage, ProcessEvent, ProcessMessage
+from brood.command import CommandManager, Event, EventType
 from brood.config import BroodConfig, CommandConfig, FailureMode, OnceConfig
 from brood.fanout import Fanout
-from brood.message import Message
+from brood.message import InternalMessage, Message
 from brood.renderer import RENDERERS, Renderer
 from brood.watch import FileWatcher, StartCommandHandler
 
@@ -26,9 +26,8 @@ class Monitor(AsyncContextManager["Monitor"]):
 
     renderer: Renderer
 
-    process_events: Fanout[ProcessEvent]
-    internal_messages: Fanout[Message]
-    process_messages: Fanout[Tuple[CommandConfig, Message]]
+    events: Fanout[Event]
+    messages: Fanout[Message]
 
     managers: List[CommandManager] = field(default_factory=list)
     watchers: List[FileWatcher] = field(default_factory=list)
@@ -37,24 +36,21 @@ class Monitor(AsyncContextManager["Monitor"]):
     def create(cls, config: BroodConfig, console: Console) -> Monitor:
         renderer_type = RENDERERS[config.renderer.type]
 
-        process_events: Fanout[ProcessEvent] = Fanout()
-        internal_messages: Fanout[InternalMessage] = Fanout()
-        process_messages: Fanout[ProcessMessage] = Fanout()
+        process_events: Fanout[Event] = Fanout()
+        messages: Fanout[Message] = Fanout()
 
         renderer = renderer_type(
             config=config.renderer,
             console=console,
-            process_events=process_events.consumer(),
-            internal_messages=internal_messages.consumer(),
-            process_messages=process_messages.consumer(),
+            events=process_events.consumer(),
+            messages=messages.consumer(),
         )
 
         return cls(
             config=config,
             renderer=renderer,
-            process_events=process_events,
-            internal_messages=internal_messages,
-            process_messages=process_messages,
+            events=process_events,
+            messages=messages,
         )
 
     async def start(self) -> None:
@@ -65,9 +61,8 @@ class Monitor(AsyncContextManager["Monitor"]):
     ) -> CommandManager:
         manager = await CommandManager.start(
             command_config=command_config,
-            process_messages=self.process_messages,
-            internal_messages=self.internal_messages,
-            process_events=self.process_events,
+            events=self.events,
+            messages=self.messages,
             width=self.renderer.available_process_width(command_config),
             delay=delay,
         )
@@ -77,7 +72,7 @@ class Monitor(AsyncContextManager["Monitor"]):
     async def run(self) -> None:
         # We must create this consumer before we start the commands,
         # to make sure it doesn't miss any process events.
-        process_events_consumer = self.process_events.consumer()
+        process_events_consumer = self.events.consumer()
 
         await self.start()
 
@@ -96,21 +91,21 @@ class Monitor(AsyncContextManager["Monitor"]):
                 d.result()
             except KillOthers as e:
                 manager = e.args[0]
-                await self.internal_messages.put(
-                    Message(
+                await self.messages.put(
+                    InternalMessage(
                         f"Killing other processes due to command failing with code {manager.exit_code}: {manager.command_config.command_string!r}"
                     )
                 )
 
-    async def handle_managers(self, process_events: Queue[ProcessEvent]) -> None:
+    async def handle_managers(self, process_events: Queue[Event]) -> None:
         while True:
             event = await process_events.get()
 
             if event.type is EventType.Stopped:
                 self.managers.remove(event.manager)
 
-                await self.internal_messages.put(
-                    Message(
+                await self.messages.put(
+                    InternalMessage(
                         f"Command exited with code {event.manager.exit_code}: {event.manager.command_config.command_string!r}"
                     )
                 )
@@ -159,8 +154,8 @@ class Monitor(AsyncContextManager["Monitor"]):
 
             await gather(
                 *(
-                    self.internal_messages.put(
-                        Message(
+                    self.messages.put(
+                        InternalMessage(
                             f"Path {event.src_path} was {event.event_type}, starting command: {config.command_string!r}"
                         )
                     )
@@ -196,8 +191,8 @@ class Monitor(AsyncContextManager["Monitor"]):
 
         for manager in managers:
             self.managers.remove(manager)
-            await self.internal_messages.put(
-                Message(
+            await self.messages.put(
+                InternalMessage(
                     f"Command exited with code {manager.exit_code}: {manager.command_config.command_string!r}"
                 )
             )

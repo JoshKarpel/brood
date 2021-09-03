@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from asyncio import Queue
+from asyncio import AbstractEventLoop, Queue
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
@@ -56,13 +56,11 @@ class FileWatcher(ContextManager["FileWatcher"]):
 
 @dataclass(frozen=True)
 class StartCommandHandler(FileSystemEventHandler):
+    loop: AbstractEventLoop
     command_config: CommandConfig
     event_queue: Queue[Tuple[CommandConfig, FileSystemEvent]] = field(default_factory=Queue)
 
     def on_any_event(self, event: FileSystemEvent) -> None:
-        if event.is_directory:
-            return
-
         try:
             git_root = get_git_root(Path(event.src_path))
 
@@ -73,7 +71,7 @@ class StartCommandHandler(FileSystemEventHandler):
         except Exception:
             pass
 
-        self.event_queue.put_nowait((self.command_config, event))
+        self.loop.call_soon_threadsafe(self.event_queue.put_nowait, (self.command_config, event))
 
     def __hash__(self) -> int:
         return hash((type(self), id(self)))

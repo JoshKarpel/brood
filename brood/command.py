@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
-from asyncio import Queue, create_subprocess_shell, create_task, sleep
+from asyncio import create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Tuple
 
 from brood.config import CommandConfig
+from brood.fanout import Fanout
 from brood.message import Message
 
 
@@ -22,16 +23,21 @@ class ProcessEvent:
     type: EventType
 
 
+InternalMessage = Message
+ProcessMessage = Tuple[CommandConfig, Message]
+
+
 @dataclass
 class CommandManager:
     command_config: CommandConfig
 
-    process_messages: Queue[Tuple[CommandConfig, Message]]
-    internal_messages: Queue[Message]
-    process_events: Queue[ProcessEvent]
+    process_events: Fanout[ProcessEvent]
+    internal_messages: Fanout[InternalMessage]
+    process_messages: Fanout[ProcessMessage]
 
-    width: int
     process: Process
+
+    width: int = 80
 
     was_killed: bool = False
 
@@ -39,16 +45,16 @@ class CommandManager:
     async def start(
         cls,
         command_config: CommandConfig,
-        process_messages: Queue[Tuple[CommandConfig, Message]],
-        internal_messages: Queue[Message],
-        process_events: Queue[ProcessEvent],
-        width: int,
-        delay: bool,
+        process_events: Fanout[ProcessEvent],
+        internal_messages: Fanout[InternalMessage],
+        process_messages: Fanout[ProcessMessage],
+        width: int = 80,
+        delay: bool = False,
     ) -> CommandManager:
         if delay:
             await sleep(command_config.starter.delay)
 
-        await internal_messages.put(Message(f"Started command: {command_config.command_string!r}"))
+        await internal_messages.put(Message(f"Starting command: {command_config.command_string!r}"))
 
         process = await create_subprocess_shell(
             command_config.command_string,
@@ -72,6 +78,7 @@ class CommandManager:
 
     def __post_init__(self) -> None:
         create_task(self.read_output())
+        create_task(self.wait())
 
     @property
     def exit_code(self) -> Optional[int]:

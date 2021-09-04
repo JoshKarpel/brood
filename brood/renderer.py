@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 from asyncio import ALL_COMPLETED, FIRST_EXCEPTION, Queue, create_task, sleep, wait
 from dataclasses import dataclass, field
@@ -10,16 +11,56 @@ from random import choice
 from shutil import get_terminal_size
 from typing import Dict, List, Literal, Mapping, Type
 
-from rich.console import Console, Group
+from colorama import Fore
+from colorama import Style as CStyle
+from rich.console import Console, ConsoleRenderable, Group
 from rich.live import Live
 from rich.progress import Progress, ProgressColumn, RenderableColumn, SpinnerColumn, Task, TaskID
 from rich.rule import Rule
-from rich.table import Table
+from rich.style import Style
+from rich.table import Column, Table
 from rich.text import Text
 
 from brood.command import CommandManager, Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
 from brood.message import CommandMessage, InternalMessage, Message
+
+RE_ANSI_ESCAPE = re.compile(r"(\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))")
+ANSI_COLOR_TO_STYLE = {
+    CStyle.RESET_ALL: Style.null(),
+    CStyle.NORMAL: Style.null(),
+    CStyle.BRIGHT: Style(bold=True),
+    CStyle.DIM: Style(dim=True),
+    Fore.RED: Style(color="red"),
+    Fore.GREEN: Style(color="green"),
+    Fore.BLUE: Style(color="blue"),
+    Fore.CYAN: Style(color="cyan"),
+    Fore.YELLOW: Style(color="yellow"),
+    Fore.MAGENTA: Style(color="magenta"),
+    Fore.BLACK: Style(color="black"),
+    Fore.WHITE: Style(color="white"),
+}
+
+
+def ansi_to_text(s: str) -> Text:
+    text = Text()
+    tmp = ""
+    style = Style.null()
+    for char in RE_ANSI_ESCAPE.split(s):
+        if char in ANSI_COLOR_TO_STYLE:
+            text = text.append(tmp, style=style)
+            new_style = ANSI_COLOR_TO_STYLE[char]
+            style = (
+                Style.combine((style, new_style)) if new_style is not Style.null() else new_style
+            )
+            tmp = ""
+        else:
+            tmp += char
+
+    # catch leftovers
+    text.append(tmp, style=style)
+
+    return text
 
 
 @dataclass(frozen=True)
@@ -124,9 +165,13 @@ class LogRenderer(Renderer):
     status_bars: Dict[CommandManager, Progress] = field(default_factory=dict)
     stop_tasks: List[asyncio.Task[None]] = field(default_factory=list)
 
+    def prefix_width(self, command_config: CommandConfig) -> int:
+        return self.render_command_prefix(
+            CommandMessage(text="", command_config=command_config)
+        ).cell_len
+
     def available_process_width(self, command_config: CommandConfig) -> int:
-        text = self.render_command_prefix(CommandMessage(text="", command_config=command_config))
-        return get_terminal_size().columns - text.cell_len
+        return get_terminal_size().columns - self.prefix_width(command_config)
 
     @cached_property
     def live(self) -> Live:
@@ -186,9 +231,9 @@ class LogRenderer(Renderer):
         )
         p.update(TaskID(0), completed=1)
 
-        self.stop_tasks.append(create_task(self.remove_pbar(manager=event.manager)))
+        self.stop_tasks.append(create_task(self.remove_status_bar(manager=event.manager)))
 
-    async def remove_pbar(self, manager: CommandManager, delay: int = 10) -> None:
+    async def remove_status_bar(self, manager: CommandManager, delay: int = 10) -> None:
         await sleep(delay)
 
         self.status_bars.pop(manager, None)
@@ -213,14 +258,14 @@ class LogRenderer(Renderer):
     async def handle_command_message(self, message: CommandMessage) -> None:
         self.console.print(self.render_command_message(message), soft_wrap=True)
 
-    def render_command_message(self, message: CommandMessage) -> Text:
-        prefix = self.render_command_prefix(message)
-        body = Text(
-            message.text,
-            style=message.command_config.message_style or self.config.message_style,
+    def render_command_message(self, message: CommandMessage) -> ConsoleRenderable:
+        g = Table.grid(
+            Column(),
+            Column(),
         )
+        g.add_row(self.render_command_prefix(message), ansi_to_text(message.text))
 
-        return Text("").append_text(prefix).append_text(body)
+        return g
 
     def render_command_prefix(self, message: CommandMessage) -> Text:
         return Text.from_markup(

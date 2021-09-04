@@ -114,7 +114,6 @@ class LogRendererConfig(RendererConfig):
     prefix_style: str = Field(
         default="", description="The default style for prefixing command output."
     )
-    message_style: str = Field(default="", description="The default style for command output.")
 
     internal_prefix: str = Field(
         default="{timestamp} ",

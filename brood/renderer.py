@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import shutil
 from asyncio import ALL_COMPLETED, FIRST_EXCEPTION, Queue, create_task, sleep, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from functools import cached_property
 from random import choice
 from shutil import get_terminal_size
-from typing import Dict, Literal, Mapping, Type
+from typing import Dict, List, Literal, Mapping, Type
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -40,12 +41,35 @@ class Renderer:
 
     async def run(self, drain: bool = False) -> None:
         done, pending = await wait(
-            (create_task(self.handle_messages(drain=drain)),),
+            (
+                create_task(self.handle_events(drain=drain)),
+                create_task(self.handle_messages(drain=drain)),
+            ),
             return_when=ALL_COMPLETED if drain else FIRST_EXCEPTION,
         )
 
         for d in done:
             d.result()
+
+    async def handle_events(self, drain: bool = False) -> None:
+        while True:
+            if drain and self.events.empty():
+                return
+
+            event = await self.events.get()
+
+            if event.type is EventType.Started:
+                await self.handle_started_event(event)
+            elif event.type is EventType.Stopped:
+                await self.handle_stopped_event(event)
+
+            self.events.task_done()
+
+    async def handle_started_event(self, event: Event) -> None:
+        pass
+
+    async def handle_stopped_event(self, event: Event) -> None:
+        pass
 
     async def handle_messages(self, drain: bool = False) -> None:
         while True:
@@ -97,69 +121,12 @@ DIM_RULE = Rule(style="dim")
 class LogRenderer(Renderer):
     config: LogRendererConfig
 
+    status_bars: Dict[CommandManager, Progress] = field(default_factory=dict)
+    stop_tasks: List[asyncio.Task[None]] = field(default_factory=list)
+
     def available_process_width(self, command_config: CommandConfig) -> int:
         text = self.render_process_message(CommandMessage(text="", command_config=command_config))
         return get_terminal_size().columns - text.cell_len
-
-    async def mount(self) -> None:
-        state: Dict[CommandManager, Progress] = {}
-
-        async def started(manager: CommandManager) -> None:
-            p = Progress(
-                SpinnerColumn(spinner_name=choice(["dots"] + [f"dots{n}" for n in range(2, 12)])),
-                RenderableColumn(Text("  ?", style="dim")),
-                RenderableColumn(Text(str(manager.process.pid).rjust(5), style="dim")),
-                TimeElapsedColumn(),
-                RenderableColumn(
-                    Text(
-                        manager.command_config.command_string,
-                        style=manager.command_config.prefix_style or self.config.prefix_style,
-                    )
-                ),
-                console=self.console,
-            )
-            p.add_task("", total=1)
-
-            state[manager] = p
-
-            update()
-
-        async def done(manager: CommandManager) -> None:
-            p = state.get(manager, None)
-            if p is None:
-                return
-
-            p.columns[0].finished_text = GREEN_CHECK if manager.exit_code == 0 else RED_X  # type: ignore
-            p.columns[1].renderable = Text(  # type: ignore
-                str(manager.exit_code).rjust(3), style="green" if manager.exit_code == 0 else "red"
-            )
-            p.update(TaskID(0), completed=1)  # type: ignore
-
-            await sleep(10)
-
-            state.pop(manager, None)
-
-            update()
-
-        def update() -> None:
-            table = Table.grid(expand=True)
-            for k, v in sorted(state.items(), key=lambda kv: kv[0].process.pid):
-                table.add_row(v)  # type: ignore
-
-            self.live.update(Group(DIM_RULE, table))
-
-        self.live.start()
-
-        while True:
-            event = await self.events.get()
-
-            if event.type is EventType.Started:
-                create_task(started(event.manager))
-            elif event.type is EventType.Stopped:
-                create_task(done(event.manager))
-
-    async def unmount(self) -> None:
-        self.live.stop()
 
     @cached_property
     def live(self) -> Live:
@@ -171,8 +138,66 @@ class LogRenderer(Renderer):
             screen=False,
         )
 
+    def update(self) -> None:
+        table = Table.grid(expand=True)
+        for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
+            table.add_row(v)  # type: ignore
+
+        self.live.update(Group(DIM_RULE, table))
+
+    async def mount(self) -> None:
+        self.live.start()
+
+    async def unmount(self) -> None:
+        for task in self.stop_tasks:
+            task.cancel()
+
+        self.live.stop()
+
+    async def handle_started_event(self, event: Event) -> None:
+        p = Progress(
+            SpinnerColumn(spinner_name=choice(["dots"] + [f"dots{n}" for n in range(2, 12)])),
+            RenderableColumn(Text("  ?", style="dim")),
+            RenderableColumn(Text(str(event.manager.process.pid).rjust(5), style="dim")),
+            TimeElapsedColumn(),
+            RenderableColumn(
+                Text(
+                    event.manager.command_config.command_string,
+                    style=event.manager.command_config.prefix_style or self.config.prefix_style,
+                )
+            ),
+            console=self.console,
+        )
+        p.add_task("", total=1)
+
+        self.status_bars[event.manager] = p
+
+        self.update()
+
+    async def handle_stopped_event(self, event: Event) -> None:
+        p = self.status_bars.get(event.manager, None)
+        if p is None:
+            return
+
+        p.columns[0].finished_text = GREEN_CHECK if event.manager.exit_code == 0 else RED_X  # type: ignore
+        p.columns[1].renderable = Text(  # type: ignore
+            str(event.manager.exit_code).rjust(3),
+            style="green" if event.manager.exit_code == 0 else "red",
+        )
+        p.update(TaskID(0), completed=1)
+
+        self.stop_tasks.append(create_task(self.remove_pbar(manager=event.manager)))
+
+    async def remove_pbar(self, manager: CommandManager, delay: int = 10) -> None:
+        await sleep(delay)
+        self.status_bars.pop(manager, None)
+        self.update()
+
     async def handle_internal_message(self, message: InternalMessage) -> None:
-        text = (
+        self.console.print(self.render_internal_message(message), soft_wrap=True)
+
+    def render_internal_message(self, message: InternalMessage) -> Text:
+        return (
             Text("")
             .append_text(
                 Text.from_markup(
@@ -186,12 +211,8 @@ class LogRenderer(Renderer):
             )
         )
 
-        self.console.print(text, soft_wrap=True)
-
     async def handle_process_message(self, message: CommandMessage) -> None:
-        text = self.render_process_message(message)
-
-        self.console.print(text, soft_wrap=True)
+        self.console.print(self.render_process_message(message), soft_wrap=True)
 
     def render_process_message(self, message: CommandMessage) -> Text:
         return (

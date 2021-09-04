@@ -81,14 +81,14 @@ class Renderer:
             if isinstance(message, InternalMessage):
                 await self.handle_internal_message(message)
             elif isinstance(message, CommandMessage):
-                await self.handle_process_message(message)
+                await self.handle_command_message(message)
 
             self.messages.task_done()
 
     async def handle_internal_message(self, message: InternalMessage) -> None:
         pass
 
-    async def handle_process_message(self, message: CommandMessage) -> None:
+    async def handle_command_message(self, message: CommandMessage) -> None:
         pass
 
 
@@ -125,7 +125,7 @@ class LogRenderer(Renderer):
     stop_tasks: List[asyncio.Task[None]] = field(default_factory=list)
 
     def available_process_width(self, command_config: CommandConfig) -> int:
-        text = self.render_process_message(CommandMessage(text="", command_config=command_config))
+        text = self.render_command_prefix(CommandMessage(text="", command_config=command_config))
         return get_terminal_size().columns - text.cell_len
 
     @cached_property
@@ -138,7 +138,7 @@ class LogRenderer(Renderer):
             screen=False,
         )
 
-    def update(self) -> None:
+    def update_live(self) -> None:
         table = Table.grid(expand=True)
         for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
             table.add_row(v)  # type: ignore
@@ -172,7 +172,7 @@ class LogRenderer(Renderer):
 
         self.status_bars[event.manager] = p
 
-        self.update()
+        self.update_live()
 
     async def handle_stopped_event(self, event: Event) -> None:
         p = self.status_bars.get(event.manager, None)
@@ -190,50 +190,47 @@ class LogRenderer(Renderer):
 
     async def remove_pbar(self, manager: CommandManager, delay: int = 10) -> None:
         await sleep(delay)
+
         self.status_bars.pop(manager, None)
-        self.update()
+
+        self.update_live()
 
     async def handle_internal_message(self, message: InternalMessage) -> None:
         self.console.print(self.render_internal_message(message), soft_wrap=True)
 
     def render_internal_message(self, message: InternalMessage) -> Text:
-        return (
-            Text("")
-            .append_text(
-                Text.from_markup(
-                    self.config.internal_prefix.format_map({"timestamp": message.timestamp}),
-                    style=self.config.internal_prefix_style,
-                )
-            )
-            .append(
-                message.text,
-                style=self.config.internal_message_style,
-            )
+        prefix = Text.from_markup(
+            self.config.internal_prefix.format_map({"timestamp": message.timestamp}),
+            style=self.config.internal_prefix_style,
+        )
+        body = Text(
+            message.text,
+            style=self.config.internal_message_style,
         )
 
-    async def handle_process_message(self, message: CommandMessage) -> None:
-        self.console.print(self.render_process_message(message), soft_wrap=True)
+        return Text("").append_text(prefix).append_text(body)
 
-    def render_process_message(self, message: CommandMessage) -> Text:
-        return (
-            Text("")
-            .append_text(
-                Text.from_markup(
-                    (message.command_config.prefix or self.config.prefix).format_map(
-                        {
-                            "name": message.command_config.name,
-                            "timestamp": message.timestamp,
-                        }
-                    ),
-                    style=message.command_config.prefix_style or self.config.prefix_style,
-                )
-            )
-            .append_text(
-                Text(
-                    message.text,
-                    style=message.command_config.message_style or self.config.message_style,
-                )
-            )
+    async def handle_command_message(self, message: CommandMessage) -> None:
+        self.console.print(self.render_command_message(message), soft_wrap=True)
+
+    def render_command_message(self, message: CommandMessage) -> Text:
+        prefix = self.render_command_prefix(message)
+        body = Text(
+            message.text,
+            style=message.command_config.message_style or self.config.message_style,
+        )
+
+        return Text("").append_text(prefix).append_text(body)
+
+    def render_command_prefix(self, message: CommandMessage) -> Text:
+        return Text.from_markup(
+            (message.command_config.prefix or self.config.prefix).format_map(
+                {
+                    "name": message.command_config.name,
+                    "timestamp": message.timestamp,
+                }
+            ),
+            style=message.command_config.prefix_style or self.config.prefix_style,
         )
 
 

@@ -185,18 +185,23 @@ class Monitor(AsyncContextManager["Monitor"]):
     ) -> Optional[bool]:
         if exc_val:
             if exc_type is CancelledError:
-                await self.messages.put(
-                    InternalMessage(f"Shutting down due to: keyboard interrupt")
-                )
+                text = f"Shutting down due to: keyboard interrupt"
             else:
-                await self.messages.put(InternalMessage(f"Shutting down due to: {exc_type}"))
+                text = f"Shutting down due to: {exc_type}"
+            await self.messages.put(InternalMessage(text))
 
         await self.terminate()
         await self.renderer.run(drain=True)
+
         await self.wait()
         await self.renderer.run(drain=True)
+
         await self.shutdown()
         await self.renderer.run(drain=True)
+
+        await self.wait()
+        await self.renderer.run(drain=True)
+
         await self.renderer.unmount()
 
         return None
@@ -229,7 +234,6 @@ class Monitor(AsyncContextManager["Monitor"]):
         ]
 
         await gather(*(self.start_command(command) for command in shutdown_commands))
-        await self.wait()
 
 
 T = TypeVar("T")

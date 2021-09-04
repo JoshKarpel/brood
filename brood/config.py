@@ -109,14 +109,14 @@ class NullRendererConfig(RendererConfig):
 class LogRendererConfig(RendererConfig):
     type: Literal["log"] = "log"
 
-    prefix: str = "{timestamp} {name} "
+    prefix: str = "{timestamp:%H:%M:%S.%f} {name} "
 
     prefix_style: str = Field(
         default="", description="The default style for prefixing command output."
     )
 
     internal_prefix: str = Field(
-        default="{timestamp} ",
+        default="{timestamp:%H:%M:%S.%f} ",
         description="The format string for the prefix to display before each internal message.",
     )
     internal_prefix_style: str = Field(

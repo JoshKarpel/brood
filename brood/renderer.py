@@ -255,10 +255,7 @@ class LogRenderer(Renderer):
             style=self.config.internal_message_style,
         )
 
-        g = Table.grid(
-            Column(),
-            Column(),
-        )
+        g = Table.grid()
         g.add_row(prefix, body)
 
         return g
@@ -267,10 +264,7 @@ class LogRenderer(Renderer):
         self.console.print(self.render_command_message(message), soft_wrap=True)
 
     def render_command_message(self, message: CommandMessage) -> ConsoleRenderable:
-        g = Table.grid(
-            Column(),
-            Column(),
-        )
+        g = Table.grid()
         g.add_row(self.render_command_prefix(message), ansi_to_text(message.text))
 
         return g

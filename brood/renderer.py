@@ -4,6 +4,7 @@ import shutil
 from asyncio import ALL_COMPLETED, FIRST_EXCEPTION, Queue, create_task, sleep, wait
 from dataclasses import dataclass
 from datetime import timedelta
+from functools import cached_property
 from random import choice
 from shutil import get_terminal_size
 from typing import Dict, Literal, Mapping, Type
@@ -34,6 +35,9 @@ class Renderer:
     async def mount(self) -> None:
         pass
 
+    async def unmount(self) -> None:
+        pass
+
     async def run(self, drain: bool = False) -> None:
         done, pending = await wait(
             (create_task(self.handle_messages(drain=drain)),),
@@ -44,12 +48,17 @@ class Renderer:
             d.result()
 
     async def handle_messages(self, drain: bool = False) -> None:
-        while not drain or not self.messages.empty():
+        while True:
+            if drain and self.messages.empty():
+                return
+
             message = await self.messages.get()
+
             if isinstance(message, InternalMessage):
                 await self.handle_internal_message(message)
             elif isinstance(message, CommandMessage):
                 await self.handle_process_message(message)
+
             self.messages.task_done()
 
     async def handle_internal_message(self, message: InternalMessage) -> None:
@@ -81,6 +90,9 @@ class TimeElapsedColumn(ProgressColumn):
         return Text(str(delta), style="dim")
 
 
+DIM_RULE = Rule(style="dim")
+
+
 @dataclass(frozen=True)
 class LogRenderer(Renderer):
     config: LogRendererConfig
@@ -91,6 +103,26 @@ class LogRenderer(Renderer):
 
     async def mount(self) -> None:
         state: Dict[CommandManager, Progress] = {}
+
+        async def started(manager: CommandManager) -> None:
+            p = Progress(
+                SpinnerColumn(spinner_name=choice(["dots"] + [f"dots{n}" for n in range(2, 12)])),
+                RenderableColumn(Text("  ?", style="dim")),
+                RenderableColumn(Text(str(manager.process.pid).rjust(5), style="dim")),
+                TimeElapsedColumn(),
+                RenderableColumn(
+                    Text(
+                        manager.command_config.command_string,
+                        style=manager.command_config.prefix_style or self.config.prefix_style,
+                    )
+                ),
+                console=self.console,
+            )
+            p.add_task("", total=1)
+
+            state[manager] = p
+
+            update()
 
         async def done(manager: CommandManager) -> None:
             p = state.get(manager, None)
@@ -107,52 +139,37 @@ class LogRenderer(Renderer):
 
             state.pop(manager, None)
 
-            refresh()
+            update()
 
-        rule = Rule(style="dim")
-
-        def refresh() -> None:
+        def update() -> None:
             table = Table.grid(expand=True)
             for k, v in sorted(state.items(), key=lambda kv: kv[0].process.pid):
                 table.add_row(v)  # type: ignore
 
-            live.update(Group(rule, table))
+            self.live.update(Group(DIM_RULE, table))
 
-        with Live(
+        self.live.start()
+
+        while True:
+            event = await self.events.get()
+
+            if event.type is EventType.Started:
+                create_task(started(event.manager))
+            elif event.type is EventType.Stopped:
+                create_task(done(event.manager))
+
+    async def unmount(self) -> None:
+        self.live.stop()
+
+    @cached_property
+    def live(self) -> Live:
+        return Live(
             console=self.console,
             auto_refresh=True,
             refresh_per_second=30,
             transient=True,
             screen=False,
-        ) as live:
-            while True:
-                event = await self.events.get()
-
-                if event.type is EventType.Started:
-                    p = Progress(
-                        SpinnerColumn(
-                            spinner_name=choice(["dots"] + [f"dots{n}" for n in range(2, 12)])
-                        ),
-                        RenderableColumn(Text("  ?", style="dim")),
-                        RenderableColumn(
-                            Text(str(event.manager.process.pid).rjust(5), style="dim")
-                        ),
-                        TimeElapsedColumn(),
-                        RenderableColumn(
-                            Text(
-                                event.manager.command_config.command_string,
-                                style=event.manager.command_config.prefix_style
-                                or self.config.prefix_style,
-                            )
-                        ),
-                        console=self.console,
-                    )
-                    p.add_task("", total=1)
-                    state[event.manager] = p
-                if event.type is EventType.Stopped:
-                    create_task(done(event.manager))
-
-                refresh()
+        )
 
     async def handle_internal_message(self, message: InternalMessage) -> None:
         text = (

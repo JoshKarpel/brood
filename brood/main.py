@@ -65,8 +65,8 @@ def run(
 
 
 async def _run(config: BroodConfig, console: Console) -> None:
-    async with Monitor.create(config=config, console=console) as coordinator:
-        await coordinator.run()
+    async with Monitor.create(config=config, console=console) as monitor:
+        await monitor.run()
 
 
 @app.command()

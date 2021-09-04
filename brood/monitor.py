@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from asyncio import FIRST_EXCEPTION, Queue, QueueEmpty, gather, get_running_loop, sleep, wait
+from asyncio import (
+    FIRST_EXCEPTION,
+    CancelledError,
+    Queue,
+    QueueEmpty,
+    gather,
+    get_running_loop,
+    sleep,
+    wait,
+)
 from dataclasses import dataclass, field
 from types import TracebackType
 from typing import AsyncContextManager, List, Optional, Tuple, Type, TypeVar
@@ -174,10 +183,22 @@ class Monitor(AsyncContextManager["Monitor"]):
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> Optional[bool]:
+        if exc_val:
+            if exc_type is CancelledError:
+                await self.messages.put(
+                    InternalMessage(f"Shutting down due to: keyboard interrupt")
+                )
+            else:
+                await self.messages.put(InternalMessage(f"Shutting down due to: {exc_type}"))
+
         await self.terminate()
+        await self.renderer.run(drain=True)
         await self.wait()
+        await self.renderer.run(drain=True)
         await self.shutdown()
         await self.renderer.run(drain=True)
+        await self.renderer.unmount()
+
         return None
 
     async def terminate(self) -> None:

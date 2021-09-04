@@ -5,7 +5,7 @@ from _pytest.tmpdir import TempPathFactory
 from hypothesis import given
 from hypothesis import strategies as st
 
-from brood.config import BroodConfig, ConfigFormat, normalize_command
+from brood.config import BroodConfig, CommandConfig, ConfigFormat
 from brood.errors import UnknownFormat
 
 
@@ -67,5 +67,10 @@ def test_load_with_unknown_format(
         (["foo", "bar"], "foo bar"),
     ],
 )
-def test_normalize_command(cmd: Union[str, List[str]], expected: str) -> None:
-    assert normalize_command(cmd) == expected
+def test_command_string(cmd: Union[str, List[str]], expected: str) -> None:
+    config = CommandConfig(
+        name="test",
+        command=cmd,
+    )
+
+    assert config.command_string == expected

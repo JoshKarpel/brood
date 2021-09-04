@@ -18,8 +18,9 @@ app = Typer()
 
 @app.command()
 def run(
-    config: Path = Argument(
+    config_path: Path = Argument(
         "brood.yaml",
+        metavar="config",
         exists=True,
         readable=True,
         show_default=True,
@@ -41,14 +42,14 @@ def run(
     console = Console()
     install(console=console, show_locals=True, width=shutil.get_terminal_size().columns)
 
-    config_ = BroodConfig.load(config)
+    config = BroodConfig.load(config_path)
 
     verbose = verbose or debug
 
     if verbose:
         console.print(
             Panel(
-                JSON.from_data(config_.dict()),
+                JSON.from_data(config.dict()),
                 title="Configuration",
                 title_align="left",
             )
@@ -60,12 +61,12 @@ def run(
     if debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    asyncio.run(_run(config_, console), debug=debug)
+    asyncio.run(_run(config, console), debug=debug)
 
 
 async def _run(config: BroodConfig, console: Console) -> None:
-    async with Monitor(config=config, console=console) as coordinator:
-        await coordinator.run()
+    async with Monitor.create(config=config, console=console) as monitor:
+        await monitor.run()
 
 
 @app.command()

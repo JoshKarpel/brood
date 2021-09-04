@@ -8,7 +8,7 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Set, Union
 import rtoml
 import yaml
 from identify import identify
-from pydantic import BaseModel, Field, PositiveFloat
+from pydantic import BaseModel, Field
 
 from brood.constants import PACKAGE_NAME
 from brood.errors import UnknownFormat
@@ -92,21 +92,10 @@ class CommandConfig(BaseConfig):
 
     @property
     def command_string(self) -> str:
-        return normalize_command(self.command)
-
-    @property
-    def shutdown_string(self) -> Optional[str]:
-        if self.shutdown is None:
-            return None
-
-        return normalize_command(self.shutdown)
-
-
-def normalize_command(command: Union[str, List[str]]) -> str:
-    if isinstance(command, list):
-        return shlex.join(command)
-    else:
-        return command
+        if isinstance(self.command, list):
+            return shlex.join(self.command)
+        else:
+            return self.command
 
 
 class RendererConfig(BaseConfig):

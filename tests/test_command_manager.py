@@ -1,12 +1,14 @@
 from asyncio import Queue
-from unittest.mock import call
+from typing import Tuple
 
 import pytest
-from pytest_mock import MockerFixture
 
-from brood.command import CommandManager
+from brood.command import CommandManager, Event
 from brood.config import CommandConfig, OnceConfig
 from brood.constants import ON_WINDOWS
+from brood.fanout import Fanout
+from brood.message import CommandMessage, Message
+from brood.monitor import drain_queue
 
 
 @pytest.fixture
@@ -15,30 +17,54 @@ def once_config(command: str) -> CommandConfig:
         name="test",
         command=command,
         starter=OnceConfig(),
-        shell=True,
     )
 
 
 @pytest.fixture
-async def once_manager(once_config: CommandConfig) -> CommandManager:
-    return await CommandManager.start(
-        command_config=once_config,
-        process_messages=Queue(),
-        internal_messages=Queue(),
-        process_events=Queue(),
-        width=80,
-        delay=False,
+async def once_manager_(once_config: CommandConfig) -> Tuple[CommandManager, Queue[Message]]:
+    process_events_fanout: Fanout[Event] = Fanout()
+
+    messages_fanout: Fanout[Message] = Fanout()
+    messages_consumer = messages_fanout.consumer()
+
+    return (
+        await CommandManager.start(
+            command_config=once_config,
+            events=process_events_fanout,
+            messages=messages_fanout,
+            width=80,
+            delay=False,
+        ),
+        messages_consumer,
     )
 
 
-@pytest.mark.parametrize("command", ["echo hi", "echo hi 1>&2"])
-async def test_command_output_to_process_message(
-    once_manager: CommandManager, command: str
-) -> None:
-    config, message = await once_manager.process_messages.get()
+@pytest.fixture
+def once_manager(once_manager_: Tuple[CommandManager, Queue[Message]]) -> CommandManager:
+    return once_manager_[0]
 
-    assert config is once_manager.command_config
+
+@pytest.fixture
+def messages(once_manager_: Tuple[CommandManager, Queue[Message]]) -> Queue[Message]:
+    return once_manager_[1]
+
+
+@pytest.mark.parametrize("command", ["echo hi", "echo hi 1>&2"])
+async def test_command_output_captured_as_command_message(
+    once_manager: CommandManager, messages: Queue[Message], command: str
+) -> None:
+    await once_manager.wait()
+
+    command_messages = [
+        message for message in await drain_queue(messages) if isinstance(message, CommandMessage)
+    ]
+
+    assert len(command_messages) == 1
+
+    message = command_messages[0]
+
     assert message.text == "hi"
+    assert message.command_config is once_manager.command_config
 
 
 @pytest.mark.parametrize("command, exit_code", [("exit 0", 0), ("exit 1", 1)])
@@ -89,21 +115,3 @@ async def test_can_kill_after_exit(once_manager: CommandManager, command: str) -
     await once_manager.wait()
 
     await once_manager.kill()
-
-
-@pytest.mark.parametrize("command", ["echo hi"])
-async def test_delay_induces_sleep(
-    once_config: CommandConfig, command: str, mocker: MockerFixture
-) -> None:
-    mock = mocker.patch("brood.command.sleep")
-
-    await CommandManager.start(
-        command_config=once_config,
-        process_messages=Queue(),
-        internal_messages=Queue(),
-        process_events=Queue(),
-        width=80,
-        delay=True,
-    )
-
-    assert mock.call_args == call(once_config.starter.delay)

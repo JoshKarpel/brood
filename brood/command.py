@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import os
-from asyncio import Queue, create_subprocess_shell, create_task, sleep
+from asyncio import create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Optional
 
 from brood.config import CommandConfig
-from brood.message import Message
+from brood.fanout import Fanout
+from brood.message import CommandMessage, InternalMessage, Message
 
 
 class EventType(Enum):
@@ -17,7 +18,7 @@ class EventType(Enum):
 
 
 @dataclass(frozen=True)
-class ProcessEvent:
+class Event:
     manager: CommandManager
     type: EventType
 
@@ -26,12 +27,12 @@ class ProcessEvent:
 class CommandManager:
     command_config: CommandConfig
 
-    process_messages: Queue[Tuple[CommandConfig, Message]]
-    internal_messages: Queue[Message]
-    process_events: Queue[ProcessEvent]
+    events: Fanout[Event]
+    messages: Fanout[Message]
 
-    width: int
     process: Process
+
+    width: int = 80
 
     was_killed: bool = False
 
@@ -39,16 +40,15 @@ class CommandManager:
     async def start(
         cls,
         command_config: CommandConfig,
-        process_messages: Queue[Tuple[CommandConfig, Message]],
-        internal_messages: Queue[Message],
-        process_events: Queue[ProcessEvent],
-        width: int,
-        delay: bool,
+        events: Fanout[Event],
+        messages: Fanout[Message],
+        width: int = 80,
+        delay: bool = False,
     ) -> CommandManager:
         if delay:
             await sleep(command_config.starter.delay)
 
-        await internal_messages.put(Message(f"Started command: {command_config.command_string!r}"))
+        await messages.put(InternalMessage(f"Starting command: {command_config.command_string!r}"))
 
         process = await create_subprocess_shell(
             command_config.command_string,
@@ -61,17 +61,17 @@ class CommandManager:
             command_config=command_config,
             width=width,
             process=process,
-            process_messages=process_messages,
-            internal_messages=internal_messages,
-            process_events=process_events,
+            events=events,
+            messages=messages,
         )
 
-        await process_events.put(ProcessEvent(manager=manager, type=EventType.Started))
+        await events.put(Event(manager=manager, type=EventType.Started))
 
         return manager
 
     def __post_init__(self) -> None:
         create_task(self.read_output())
+        create_task(self.wait())
 
     @property
     def exit_code(self) -> Optional[int]:
@@ -87,8 +87,8 @@ class CommandManager:
 
         self.was_killed = True
 
-        await self.internal_messages.put(
-            Message(f"Stopping command: {self.command_config.command_string!r}")
+        await self.messages.put(
+            InternalMessage(f"Stopping command: {self.command_config.command_string!r}")
         )
 
         self.process.terminate()
@@ -99,15 +99,15 @@ class CommandManager:
 
         self.was_killed = True
 
-        await self.internal_messages.put(
-            Message(f"Killing command: {self.command_config.command_string!r}")
+        await self.messages.put(
+            InternalMessage(f"Killing command: {self.command_config.command_string!r}")
         )
 
         self.process.kill()
 
     async def wait(self) -> CommandManager:
         await self.process.wait()
-        await self.process_events.put(ProcessEvent(manager=self, type=EventType.Stopped))
+        await self.events.put(Event(manager=self, type=EventType.Stopped))
         return self
 
     async def read_output(self) -> None:
@@ -119,8 +119,11 @@ class CommandManager:
             if not line:
                 break
 
-            await self.process_messages.put(
-                (self.command_config, Message(line.decode("utf-8").rstrip()))
+            await self.messages.put(
+                CommandMessage(
+                    text=line.decode("utf-8").rstrip(),
+                    command_config=self.command_config,
+                )
             )
 
     def __hash__(self) -> int:

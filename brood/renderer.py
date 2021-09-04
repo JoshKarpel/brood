@@ -25,10 +25,11 @@ from brood.command import CommandManager, Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
 from brood.message import CommandMessage, InternalMessage, Message
 
+NULL_STYLE = Style.null()
 RE_ANSI_ESCAPE = re.compile(r"(\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))")
 ANSI_COLOR_TO_STYLE = {
-    CStyle.RESET_ALL: Style.null(),
-    CStyle.NORMAL: Style.null(),
+    CStyle.RESET_ALL: NULL_STYLE,
+    CStyle.NORMAL: NULL_STYLE,
     CStyle.BRIGHT: Style(bold=True),
     CStyle.DIM: Style(dim=True),
     Fore.RED: Style(color="red"),
@@ -44,21 +45,22 @@ ANSI_COLOR_TO_STYLE = {
 
 def ansi_to_text(s: str) -> Text:
     text = Text()
-    tmp = ""
-    style = Style.null()
+    buffer = ""
+    style = NULL_STYLE
     for char in RE_ANSI_ESCAPE.split(s):
         if char in ANSI_COLOR_TO_STYLE:
-            text = text.append(tmp, style=style)
-            new_style = ANSI_COLOR_TO_STYLE[char]
-            style = (
-                Style.combine((style, new_style)) if new_style is not Style.null() else new_style
-            )
-            tmp = ""
-        else:
-            tmp += char
+            # close current buffer
+            text = text.append(buffer, style=style)
 
-    # catch leftovers
-    text.append(tmp, style=style)
+            # set up next buffer
+            new_style = ANSI_COLOR_TO_STYLE[char]
+            style = Style.combine((style, new_style)) if new_style is not NULL_STYLE else new_style
+            buffer = ""
+        else:
+            buffer += char
+
+    # catch leftover buffer
+    text.append(buffer, style=style)
 
     return text
 
@@ -243,7 +245,7 @@ class LogRenderer(Renderer):
     async def handle_internal_message(self, message: InternalMessage) -> None:
         self.console.print(self.render_internal_message(message), soft_wrap=True)
 
-    def render_internal_message(self, message: InternalMessage) -> Text:
+    def render_internal_message(self, message: InternalMessage) -> ConsoleRenderable:
         prefix = Text.from_markup(
             self.config.internal_prefix.format_map({"timestamp": message.timestamp}),
             style=self.config.internal_prefix_style,
@@ -253,7 +255,13 @@ class LogRenderer(Renderer):
             style=self.config.internal_message_style,
         )
 
-        return Text("").append_text(prefix).append_text(body)
+        g = Table.grid(
+            Column(),
+            Column(),
+        )
+        g.add_row(prefix, body)
+
+        return g
 
     async def handle_command_message(self, message: CommandMessage) -> None:
         self.console.print(self.render_command_message(message), soft_wrap=True)

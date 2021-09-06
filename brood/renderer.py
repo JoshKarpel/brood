@@ -18,7 +18,7 @@ from rich.live import Live
 from rich.progress import Progress, ProgressColumn, RenderableColumn, SpinnerColumn, Task, TaskID
 from rich.rule import Rule
 from rich.style import Style
-from rich.table import Column, Table
+from rich.table import Table
 from rich.text import Text
 
 from brood.command import CommandManager, Event, EventType

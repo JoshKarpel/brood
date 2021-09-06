@@ -1,6 +1,6 @@
 from asyncio import Queue, create_task, sleep
 
-from brood.monitor import drain_queue
+from brood.utils import drain_queue
 
 
 async def sleep_then_put(queue: Queue[float], s: float) -> None:

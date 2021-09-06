@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import re
 import shutil
-from asyncio import ALL_COMPLETED, FIRST_EXCEPTION, Queue, create_task, sleep, wait
+from asyncio import ALL_COMPLETED, FIRST_EXCEPTION, Queue, create_task, wait
 from dataclasses import dataclass, field
 from datetime import timedelta
-from functools import cached_property
+from functools import cached_property, partial
 from random import choice
 from shutil import get_terminal_size
 from typing import Dict, List, Literal, Mapping, Type
@@ -24,6 +24,7 @@ from rich.text import Text
 from brood.command import CommandManager, Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
 from brood.message import CommandMessage, InternalMessage, Message
+from brood.utils import delay
 
 NULL_STYLE = Style.null()
 RE_ANSI_ESCAPE = re.compile(r"(\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))")
@@ -180,7 +181,7 @@ class LogRenderer(Renderer):
         return Live(
             console=self.console,
             auto_refresh=True,
-            refresh_per_second=30,
+            refresh_per_second=10,
             transient=True,
             screen=False,
         )
@@ -193,6 +194,9 @@ class LogRenderer(Renderer):
         self.live.update(Group(DIM_RULE, table))
 
     async def mount(self) -> None:
+        if not self.config.status_tracker:
+            return
+
         self.live.start()
 
     async def unmount(self) -> None:
@@ -202,6 +206,9 @@ class LogRenderer(Renderer):
         self.live.stop()
 
     async def handle_started_event(self, event: Event) -> None:
+        if not self.config.status_tracker:
+            return
+
         p = Progress(
             SpinnerColumn(spinner_name=choice(["dots"] + [f"dots{n}" for n in range(2, 12)])),
             RenderableColumn(Text("  ?", style="dim")),
@@ -222,6 +229,9 @@ class LogRenderer(Renderer):
         self.update_live()
 
     async def handle_stopped_event(self, event: Event) -> None:
+        if not self.config.status_tracker:
+            return
+
         p = self.status_bars.get(event.manager, None)
         if p is None:
             return
@@ -233,11 +243,9 @@ class LogRenderer(Renderer):
         )
         p.update(TaskID(0), completed=1)
 
-        self.stop_tasks.append(create_task(self.remove_status_bar(manager=event.manager)))
+        self.stop_tasks.append(delay(10, partial(self.remove_status_bar, manager=event.manager)))
 
     async def remove_status_bar(self, manager: CommandManager, delay: int = 10) -> None:
-        await sleep(delay)
-
         self.status_bars.pop(manager, None)
 
         self.update_live()

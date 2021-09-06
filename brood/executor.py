@@ -38,7 +38,14 @@ class Executor:
                 **{
                     config: self.renderer.available_process_width(config)
                     for config in self.config.commands
-                }
+                },
+                **{
+                    config.shutdown_config: self.renderer.available_process_width(
+                        config.shutdown_config
+                    )
+                    for config in self.config.commands
+                    if config.shutdown_config is not None
+                },
             },
         )
 
@@ -64,7 +71,7 @@ class Executor:
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> Optional[bool]:
-        if exc_val:
+        if exc_type:
             if exc_type is CancelledError:
                 text = f"Shutting down due to: keyboard interrupt"
             elif exc_type is KillOthers:
@@ -73,9 +80,11 @@ class Executor:
                 text = f"Shutting down due to: {exc_type.__name__}"
             await self.messages.put(InternalMessage(text))
 
+        drain_renderer = create_task(self.renderer.run())
+
         await self.monitor.stop()
 
-        await self.renderer.run(drain=True)
+        drain_renderer.cancel()
 
         await self.renderer.unmount()
 

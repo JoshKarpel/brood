@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
-from asyncio import Task, create_subprocess_shell, create_task
+from asyncio import FIRST_COMPLETED, Task, create_subprocess_shell, create_task, wait
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass, field
 from enum import Enum
+from signal import SIGINT, SIGKILL, SIGTERM
 from typing import Optional
 
 from brood.config import CommandConfig
@@ -53,6 +54,7 @@ class CommandManager:
             stdout=PIPE,
             stderr=STDOUT,
             env={**os.environ, "FORCE_COLOR": "true", "COLUMNS": str(width)},
+            preexec_fn=os.setsid,
         )
 
         manager = cls(
@@ -69,7 +71,7 @@ class CommandManager:
 
     def __post_init__(self) -> None:
         self.reader = create_task(self.read_output())
-        create_task(self.wait(send_event=True))
+        create_task(self.wait())
 
     @property
     def exit_code(self) -> Optional[int]:
@@ -79,6 +81,9 @@ class CommandManager:
     def has_exited(self) -> bool:
         return self.exit_code is not None
 
+    def send_signal(self, signal: int) -> None:
+        os.killpg(os.getpgid(self.process.pid), signal)
+
     async def terminate(self) -> None:
         if self.has_exited:
             return None
@@ -86,10 +91,10 @@ class CommandManager:
         self.was_killed = True
 
         await self.messages.put(
-            InternalMessage(f"Stopping command: {self.command_config.command_string!r}")
+            InternalMessage(f"Terminating command: {self.command_config.command_string!r}")
         )
 
-        self.process.terminate()
+        self.send_signal(SIGTERM)
 
     async def kill(self) -> None:
         if self.has_exited:
@@ -101,13 +106,12 @@ class CommandManager:
             InternalMessage(f"Killing command: {self.command_config.command_string!r}")
         )
 
-        self.process.kill()
+        self.send_signal(SIGKILL)
 
-    async def wait(self, send_event: bool = False) -> CommandManager:
+    async def wait(self) -> CommandManager:
         await self.process.wait()
         await self.reader
-        if send_event:
-            await self.events.put(Event(manager=self, type=EventType.Stopped))
+        await self.events.put(Event(manager=self, type=EventType.Stopped))
         return self
 
     async def read_output(self) -> None:
@@ -117,7 +121,7 @@ class CommandManager:
         while True:
             line = await self.process.stdout.readline()
             if not line:
-                return
+                break
 
             await self.messages.put(
                 CommandMessage(

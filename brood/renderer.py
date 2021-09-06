@@ -158,9 +158,6 @@ class TimeElapsedColumn(ProgressColumn):
         return Text(str(delta), style="dim")
 
 
-DIM_RULE = Rule(style="dim")
-
-
 @dataclass(frozen=True)
 class LogRenderer(Renderer):
     config: LogRendererConfig
@@ -191,7 +188,7 @@ class LogRenderer(Renderer):
         for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
             table.add_row(v)  # type: ignore
 
-        self.live.update(Group(DIM_RULE, table))
+        self.live.update(Group(Rule(style="dim"), table))
 
     async def mount(self) -> None:
         if not self.config.status_tracker:

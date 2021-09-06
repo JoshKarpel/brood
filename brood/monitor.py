@@ -77,7 +77,10 @@ class Monitor:
             if event.type is EventType.Started:
                 self.managers.add(event.manager)
             elif event.type is EventType.Stopped:
-                self.managers.remove(event.manager)
+                try:
+                    self.managers.remove(event.manager)
+                except KeyError:
+                    return  # it's ok to get multiple stop events for the same manager, e.g., during shutdown
 
                 await self.messages.put(
                     InternalMessage(
@@ -151,12 +154,6 @@ class Monitor:
         await self.shutdown()
         await self.wait()
 
-    async def terminate(self) -> None:
-        await gather(*(manager.terminate() for manager in self.managers))
-
-        for watcher in self.watchers:
-            watcher.stop()
-
     async def wait(self) -> None:
         await gather(*(manager.wait() for manager in self.managers))
 
@@ -164,6 +161,12 @@ class Monitor:
 
         for watcher in self.watchers:
             watcher.join()
+
+    async def terminate(self) -> None:
+        await gather(*(manager.terminate() for manager in self.managers))
+
+        for watcher in self.watchers:
+            watcher.stop()
 
     async def shutdown(self) -> None:
         shutdown_configs = [command.shutdown_config for command in self.config.commands]

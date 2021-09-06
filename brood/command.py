@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from asyncio import create_subprocess_shell, create_task, sleep
+from asyncio import create_subprocess_shell, create_task
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass
 from enum import Enum
@@ -43,11 +43,7 @@ class CommandManager:
         events: Fanout[Event],
         messages: Fanout[Message],
         width: int = 80,
-        delay: bool = False,
     ) -> CommandManager:
-        if delay:
-            await sleep(command_config.starter.delay)
-
         await messages.put(InternalMessage(f"Starting command: {command_config.command_string!r}"))
 
         process = await create_subprocess_shell(

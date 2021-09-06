@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from types import TracebackType
-from typing import Callable, ContextManager, Optional, Tuple, Type
+from typing import Callable, ContextManager, Optional, Type
 
 import git
 from git import NoSuchPathError
@@ -55,10 +55,16 @@ class FileWatcher(ContextManager["FileWatcher"]):
 
 
 @dataclass(frozen=True)
+class WatchEvent:
+    command_config: CommandConfig
+    event: FileSystemEvent
+
+
+@dataclass(frozen=True)
 class StartCommandHandler(FileSystemEventHandler):
     loop: AbstractEventLoop
     command_config: CommandConfig
-    event_queue: Queue[Tuple[CommandConfig, FileSystemEvent]] = field(default_factory=Queue)
+    event_queue: Queue[WatchEvent] = field(default_factory=Queue)
 
     def on_any_event(self, event: FileSystemEvent) -> None:
         try:
@@ -71,7 +77,9 @@ class StartCommandHandler(FileSystemEventHandler):
         except Exception:
             pass
 
-        self.loop.call_soon_threadsafe(self.event_queue.put_nowait, (self.command_config, event))
+        self.loop.call_soon_threadsafe(
+            self.event_queue.put_nowait, WatchEvent(command_config=self.command_config, event=event)
+        )
 
     def __hash__(self) -> int:
         return hash((type(self), id(self)))

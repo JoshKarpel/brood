@@ -1,5 +1,5 @@
 from brood.fanout import Fanout
-from brood.monitor import drain_queue
+from brood.utils import drain_queue
 
 
 async def test_each_subscriber_gets_each_message() -> None:

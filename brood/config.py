@@ -27,21 +27,19 @@ class BaseConfig(BaseModel):
         )
 
 
-class StarterConfig(BaseConfig):
-    delay: float = Field(
-        default=2, description="The delay before starting the command, in certain situations.", ge=0
-    )
+class OnceConfig(BaseConfig):
+    type: Literal["once"] = "once"
 
 
-class RestartConfig(StarterConfig):
+class RestartConfig(BaseConfig):
     type: Literal["restart"] = "restart"
 
-    restart_on_exit: bool = Field(
-        default=True, description="If true, the command will be restarted whenever it exits."
+    delay: float = Field(
+        default=2, description="The delay before restarting the command after it exits.", ge=0
     )
 
 
-class WatchConfig(StarterConfig):
+class WatchConfig(BaseConfig):
     type: Literal["watch"] = "watch"
 
     paths: List[str] = Field(
@@ -56,10 +54,6 @@ class WatchConfig(StarterConfig):
         default=False,
         description="If true, multiple instances of this command are allowed to run at once. If false, previous instances will be killed before starting a new one.",
     )
-
-
-class OnceConfig(StarterConfig):
-    type: Literal["once"] = "once"
 
 
 class CommandConfig(BaseConfig):
@@ -88,7 +82,7 @@ class CommandConfig(BaseConfig):
         description=f"The Rich style to apply to each line of output from this command. Defaults to the renderer's 'message_style'.",
     )
 
-    starter: Union[RestartConfig, WatchConfig, OnceConfig] = RestartConfig()
+    starter: Union[OnceConfig, RestartConfig, WatchConfig] = RestartConfig()
 
     @property
     def command_string(self) -> str:
@@ -109,15 +103,14 @@ class NullRendererConfig(RendererConfig):
 class LogRendererConfig(RendererConfig):
     type: Literal["log"] = "log"
 
-    prefix: str = "{timestamp} {name} "
+    prefix: str = "{timestamp:%H:%M:%S.%f} {name} "
 
     prefix_style: str = Field(
         default="", description="The default style for prefixing command output."
     )
-    message_style: str = Field(default="", description="The default style for command output.")
 
     internal_prefix: str = Field(
-        default="{timestamp} ",
+        default="{timestamp:%H:%M:%S.%f} ",
         description="The format string for the prefix to display before each internal message.",
     )
     internal_prefix_style: str = Field(
@@ -126,6 +119,11 @@ class LogRendererConfig(RendererConfig):
     )
     internal_message_style: str = Field(
         default="dim", description="The style to apply to each internal message."
+    )
+
+    status_tracker: bool = Field(
+        default=True,
+        description="Enable/disable the process status tracker at the bottom of the terminal.",
     )
 
 

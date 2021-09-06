@@ -8,7 +8,7 @@ from brood.config import CommandConfig, OnceConfig
 from brood.constants import ON_WINDOWS
 from brood.fanout import Fanout
 from brood.message import CommandMessage, Message
-from brood.monitor import drain_queue
+from brood.utils import drain_queue
 
 
 @pytest.fixture
@@ -33,7 +33,6 @@ async def once_manager_(once_config: CommandConfig) -> Tuple[CommandManager, Que
             events=process_events_fanout,
             messages=messages_fanout,
             width=80,
-            delay=False,
         ),
         messages_consumer,
     )

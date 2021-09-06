@@ -11,6 +11,7 @@ from typer import Argument, Option, Typer
 
 from brood.config import BroodConfig
 from brood.constants import PACKAGE_NAME, __version__
+from brood.executor import Executor
 from brood.monitor import Monitor
 
 app = Typer()
@@ -40,7 +41,7 @@ def run(
     Execute a configuration.
     """
     console = Console()
-    install(console=console, show_locals=True, width=shutil.get_terminal_size().columns)
+    # install(console=console, show_locals=True, width=shutil.get_terminal_size().columns)
 
     config = BroodConfig.load(config_path)
 
@@ -65,8 +66,8 @@ def run(
 
 
 async def _run(config: BroodConfig, console: Console) -> None:
-    async with Monitor.create(config=config, console=console) as monitor:
-        await monitor.run()
+    async with Executor(config=config, console=console) as executor:
+        await executor.run()
 
 
 @app.command()

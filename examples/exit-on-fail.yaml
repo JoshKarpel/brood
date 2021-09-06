@@ -6,3 +6,5 @@ commands:
   - name: "echo"
     command: "sleep 5; echo nope"
     prefix_style: "green"
+
+failure_mode: "kill_others"

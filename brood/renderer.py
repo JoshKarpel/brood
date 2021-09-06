@@ -74,7 +74,7 @@ class Renderer:
     messages: Queue[Message]
     events: Queue[Event]
 
-    def available_process_width(self, command: CommandConfig) -> int:
+    def available_process_width(self, command_config: CommandConfig) -> int:
         raise NotImplementedError
 
     async def mount(self) -> None:
@@ -138,7 +138,7 @@ class Renderer:
 
 @dataclass(frozen=True)
 class NullRenderer(Renderer):
-    def available_process_width(self, command: CommandConfig) -> int:
+    def available_process_width(self, command_config: CommandConfig) -> int:
         return shutil.get_terminal_size().columns
 
 

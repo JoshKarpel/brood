@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from asyncio import create_subprocess_shell, create_task
+from asyncio import Task, create_subprocess_shell, create_task
 from asyncio.subprocess import PIPE, STDOUT, Process
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
@@ -27,14 +27,16 @@ class Event:
 class CommandManager:
     command_config: CommandConfig
 
-    events: Fanout[Event]
-    messages: Fanout[Message]
+    events: Fanout[Event] = field(repr=False)
+    messages: Fanout[Message] = field(repr=False)
 
-    process: Process
+    process: Process = field(repr=False)
 
     width: int = 80
 
     was_killed: bool = False
+
+    reader: Optional[Task[None]] = None
 
     @classmethod
     async def start(
@@ -66,8 +68,8 @@ class CommandManager:
         return manager
 
     def __post_init__(self) -> None:
-        create_task(self.read_output())
-        create_task(self.wait())
+        self.reader = create_task(self.read_output())
+        create_task(self.wait(send_event=True))
 
     @property
     def exit_code(self) -> Optional[int]:
@@ -101,9 +103,11 @@ class CommandManager:
 
         self.process.kill()
 
-    async def wait(self) -> CommandManager:
+    async def wait(self, send_event: bool = False) -> CommandManager:
         await self.process.wait()
-        await self.events.put(Event(manager=self, type=EventType.Stopped))
+        await self.reader
+        if send_event:
+            await self.events.put(Event(manager=self, type=EventType.Stopped))
         return self
 
     async def read_output(self) -> None:
@@ -113,7 +117,7 @@ class CommandManager:
         while True:
             line = await self.process.stdout.readline()
             if not line:
-                break
+                return
 
             await self.messages.put(
                 CommandMessage(

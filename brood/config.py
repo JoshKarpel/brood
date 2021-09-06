@@ -91,6 +91,13 @@ class CommandConfig(BaseConfig):
         else:
             return self.command
 
+    @property
+    def shutdown_config(self) -> Optional[CommandConfig]:
+        if self.shutdown is None:
+            return None
+
+        return self.copy(update={"command": self.shutdown, "starter": OnceConfig()})
+
 
 class RendererConfig(BaseConfig):
     pass

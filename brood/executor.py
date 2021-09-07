@@ -96,4 +96,4 @@ class Executor:
 
         await self.renderer.unmount()
 
-        return None
+        return True

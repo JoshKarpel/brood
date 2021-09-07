@@ -21,7 +21,7 @@ from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
-from brood.command import CommandManager, Event, EventType
+from brood.command import Command, Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
 from brood.message import CommandMessage, InternalMessage, Message
 from brood.utils import delay
@@ -163,7 +163,7 @@ class TimeElapsedColumn(ProgressColumn):
 class LogRenderer(Renderer):
     config: LogRendererConfig
 
-    status_bars: Dict[CommandManager, Progress] = field(default_factory=dict)
+    status_bars: Dict[Command, Progress] = field(default_factory=dict)
     stop_tasks: List[asyncio.Task[None]] = field(default_factory=list)
 
     def prefix_width(self, command_config: CommandConfig) -> int:
@@ -214,8 +214,8 @@ class LogRenderer(Renderer):
             TimeElapsedColumn(),
             RenderableColumn(
                 Text(
-                    event.manager.command_config.command_string,
-                    style=event.manager.command_config.prefix_style or self.config.prefix_style,
+                    event.manager.config.command_string,
+                    style=event.manager.config.prefix_style or self.config.prefix_style,
                 )
             ),
             console=self.console,
@@ -243,7 +243,7 @@ class LogRenderer(Renderer):
 
         self.stop_tasks.append(delay(10, partial(self.remove_status_bar, manager=event.manager)))
 
-    async def remove_status_bar(self, manager: CommandManager, delay: int = 10) -> None:
+    async def remove_status_bar(self, manager: Command, delay: int = 10) -> None:
         self.status_bars.pop(manager, None)
 
         self.update_live()

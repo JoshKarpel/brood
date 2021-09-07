@@ -33,7 +33,6 @@ class Executor:
             config=self.config,
             events=self.events,
             messages=self.messages,
-            events_consumer=self.events.consumer(),
             widths={
                 **{
                     config: self.renderer.available_process_width(config)

@@ -20,13 +20,13 @@ class EventType(Enum):
 
 @dataclass(frozen=True)
 class Event:
-    manager: CommandManager
+    manager: Command
     type: EventType
 
 
 @dataclass
-class CommandManager:
-    command_config: CommandConfig
+class Command:
+    config: CommandConfig
 
     events: Fanout[Event] = field(repr=False)
     messages: Fanout[Message] = field(repr=False)
@@ -42,15 +42,15 @@ class CommandManager:
     @classmethod
     async def start(
         cls,
-        command_config: CommandConfig,
+        config: CommandConfig,
         events: Fanout[Event],
         messages: Fanout[Message],
         width: int = 80,
-    ) -> CommandManager:
-        await messages.put(InternalMessage(f"Starting command: {command_config.command_string!r}"))
+    ) -> Command:
+        await messages.put(InternalMessage(f"Starting command: {config.command_string!r}"))
 
         process = await create_subprocess_shell(
-            command_config.command_string,
+            config.command_string,
             stdout=PIPE,
             stderr=STDOUT,
             env={**os.environ, "FORCE_COLOR": "true", "COLUMNS": str(width)},
@@ -58,7 +58,7 @@ class CommandManager:
         )
 
         manager = cls(
-            command_config=command_config,
+            config=config,
             width=width,
             process=process,
             events=events,
@@ -71,7 +71,7 @@ class CommandManager:
 
     def __post_init__(self) -> None:
         self.reader = create_task(
-            self.read_output(), name=f"output reader for {self.command_config.command_string!r}"
+            self.read_output(), name=f"output reader for {self.config.command_string!r}"
         )
         create_task(self.wait())
 
@@ -93,7 +93,7 @@ class CommandManager:
         self.was_killed = True
 
         await self.messages.put(
-            InternalMessage(f"Terminating command: {self.command_config.command_string!r}")
+            InternalMessage(f"Terminating command: {self.config.command_string!r}")
         )
 
         self._send_signal(SIGTERM)
@@ -104,13 +104,11 @@ class CommandManager:
 
         self.was_killed = True
 
-        await self.messages.put(
-            InternalMessage(f"Killing command: {self.command_config.command_string!r}")
-        )
+        await self.messages.put(InternalMessage(f"Killing command: {self.config.command_string!r}"))
 
         self._send_signal(SIGKILL)
 
-    async def wait(self) -> CommandManager:
+    async def wait(self) -> Command:
         await self.process.wait()
 
         if self.reader:
@@ -135,9 +133,9 @@ class CommandManager:
             await self.messages.put(
                 CommandMessage(
                     text=line.decode("utf-8").rstrip(),
-                    command_config=self.command_config,
+                    command_config=self.config,
                 )
             )
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.command_config, self.process.pid))
+        return hash((self.__class__, self.config, self.process.pid))

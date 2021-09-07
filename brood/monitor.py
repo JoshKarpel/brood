@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import List, Mapping, Set
 
-from brood.command import CommandManager, Event, EventType
+from brood.command import Command, Event, EventType
 from brood.config import BroodConfig, CommandConfig, FailureMode, RestartConfig, WatchConfig
 from brood.fanout import Fanout
 from brood.message import InternalMessage, Message
@@ -17,26 +17,29 @@ class KillOthers(Exception):
     pass
 
 
-@dataclass(frozen=True)
+@dataclass
 class Monitor:
     config: BroodConfig
 
     events: Fanout[Event]
     messages: Fanout[Message]
 
-    events_consumer: Queue[Event]
-
     widths: Mapping[CommandConfig, int]
 
-    managers: Set[CommandManager] = field(default_factory=set)
+    managers: Set[Command] = field(default_factory=set)
     watchers: List[FileWatcher] = field(default_factory=list)
+
+    events_consumer: Queue[Event] = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.events_consumer = self.events.consumer()
 
     async def start_commands(self) -> None:
         await gather(*(self.start_command(command) for command in self.config.commands))
 
     async def start_command(self, command_config: CommandConfig) -> None:
-        await CommandManager.start(
-            command_config=command_config,
+        await Command.start(
+            config=command_config,
             events=self.events,
             messages=self.messages,
             width=self.widths[command_config],
@@ -73,7 +76,7 @@ class Monitor:
 
                 await self.messages.put(
                     InternalMessage(
-                        f"Command exited with code {event.manager.exit_code}: {event.manager.command_config.command_string!r}"
+                        f"Command exited with code {event.manager.exit_code}: {event.manager.config.command_string!r}"
                     )
                 )
 
@@ -84,12 +87,12 @@ class Monitor:
                 ):
                     raise KillOthers(event.manager)
 
-                if isinstance(event.manager.command_config.starter, RestartConfig):
+                if isinstance(event.manager.config.starter, RestartConfig):
                     delay(
-                        event.manager.command_config.starter.delay,
+                        event.manager.config.starter.delay,
                         partial(
                             self.start_command,
-                            command_config=event.manager.command_config,
+                            command_config=event.manager.config,
                         ),
                     )
 
@@ -117,7 +120,7 @@ class Monitor:
                     and not watch_event.command_config.starter.allow_multiple
                 ):
                     for manager in self.managers:
-                        if manager.command_config is watch_event.command_config:
+                        if manager.config is watch_event.command_config:
                             stops.add(manager)
 
                 watch_events.task_done()

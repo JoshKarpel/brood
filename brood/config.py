@@ -77,10 +77,6 @@ class CommandConfig(BaseConfig):
         default=None,
         description=f"The Rich style to apply to the prefix. Defaults to the renderer's 'prefix_style'.",
     )
-    message_style: Optional[str] = Field(
-        default=None,
-        description=f"The Rich style to apply to each line of output from this command. Defaults to the renderer's 'message_style'.",
-    )
 
     starter: Union[OnceConfig, RestartConfig, WatchConfig] = RestartConfig()
 

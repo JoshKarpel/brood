@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 import os
-from asyncio import FIRST_COMPLETED, Task, create_subprocess_shell, create_task, wait
+from asyncio import (
+    FIRST_COMPLETED,
+    CancelledError,
+    Task,
+    create_subprocess_shell,
+    create_task,
+    wait,
+)
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass, field
 from enum import Enum
@@ -70,7 +77,9 @@ class CommandManager:
         return manager
 
     def __post_init__(self) -> None:
-        self.reader = create_task(self.read_output())
+        self.reader = create_task(
+            self.read_output(), name=f"output reader for {self.command_config.command_string!r}"
+        )
         create_task(self.wait())
 
     @property
@@ -81,7 +90,7 @@ class CommandManager:
     def has_exited(self) -> bool:
         return self.exit_code is not None
 
-    def send_signal(self, signal: int) -> None:
+    def _send_signal(self, signal: int) -> None:
         os.killpg(os.getpgid(self.process.pid), signal)
 
     async def terminate(self) -> None:
@@ -94,7 +103,7 @@ class CommandManager:
             InternalMessage(f"Terminating command: {self.command_config.command_string!r}")
         )
 
-        self.send_signal(SIGTERM)
+        self._send_signal(SIGTERM)
 
     async def kill(self) -> None:
         if self.has_exited:
@@ -106,12 +115,19 @@ class CommandManager:
             InternalMessage(f"Killing command: {self.command_config.command_string!r}")
         )
 
-        self.send_signal(SIGKILL)
+        self._send_signal(SIGKILL)
 
     async def wait(self) -> CommandManager:
         await self.process.wait()
-        await self.reader
+
+        if self.reader:
+            try:
+                await self.reader
+            except CancelledError:
+                pass
+
         await self.events.put(Event(manager=self, type=EventType.Stopped))
+
         return self
 
     async def read_output(self) -> None:

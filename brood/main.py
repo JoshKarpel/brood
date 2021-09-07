@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import shutil
+import sys
 from pathlib import Path
 
 from rich.console import Console

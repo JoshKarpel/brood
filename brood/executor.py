@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from asyncio import FIRST_EXCEPTION, CancelledError, create_task, wait
+from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, CancelledError, create_task, sleep, wait
 from types import TracebackType
 from typing import Optional, Type
 
@@ -80,12 +80,20 @@ class Executor:
                 text = f"Shutting down due to: {exc_type.__name__}"
             await self.messages.put(InternalMessage(text))
 
-        drain_renderer = create_task(self.renderer.run())
+        # Stop the monitor while repeatedly draining the renderer,
+        # so that we can emit output during shutdown.
+        stop_monitor = create_task(self.monitor.stop())
+        drain_renderer = create_task(self.renderer.run(drain=True))
+        while True:
+            done, pending = await wait((stop_monitor, drain_renderer), return_when=FIRST_COMPLETED)
 
-        await self.monitor.stop()
-
-        drain_renderer.cancel()
+            if stop_monitor in done:
+                await drain_renderer
+                break
+            else:
+                await sleep(0.001)
+                drain_renderer = create_task(self.renderer.run(drain=True))
 
         await self.renderer.unmount()
 
-        return True
+        return None

@@ -12,6 +12,7 @@ commands:
 
   - name: "long"
     command: "echo start && sleep 10 && echo done"
+    shutdown: "sleep 3 && echo shutdown"
     prefix_style: "cyan"
     starter:
       type: "watch"

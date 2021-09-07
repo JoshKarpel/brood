@@ -142,6 +142,7 @@ class NullRenderer(Renderer):
         return shutil.get_terminal_size().columns
 
 
+DOTS = ["dots"] + [f"dots{n}" for n in range(2, 12)]
 GREEN_CHECK = Text("✔", style="green")
 RED_X = Text("✘", style="red")
 
@@ -188,7 +189,7 @@ class LogRenderer(Renderer):
         for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
             table.add_row(v)  # type: ignore
 
-        self.live.update(Group(Rule(style="dim"), table))
+        self.live.update(Group(Rule(style="dim"), table), refresh=True)
 
     async def mount(self) -> None:
         if not self.config.status_tracker:
@@ -207,7 +208,7 @@ class LogRenderer(Renderer):
             return
 
         p = Progress(
-            SpinnerColumn(spinner_name=choice(["dots"] + [f"dots{n}" for n in range(2, 12)])),
+            SpinnerColumn(spinner_name=choice(DOTS), style=NULL_STYLE),
             RenderableColumn(Text("  ?", style="dim")),
             RenderableColumn(Text(str(event.manager.process.pid).rjust(5), style="dim")),
             TimeElapsedColumn(),

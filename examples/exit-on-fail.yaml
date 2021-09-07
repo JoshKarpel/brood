@@ -4,5 +4,11 @@ commands:
     prefix_style: "red"
 
   - name: "echo"
-    command: "sleep 5; echo nope"
+    command: "python -c 'import time; [(time.sleep(1), print(1)) for _ in range(3)]' && echo nope"
     prefix_style: "green"
+
+renderer:
+  type: "log"
+  status_tracker: false
+
+failure_mode: "kill_others"

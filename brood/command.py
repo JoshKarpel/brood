@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
-from asyncio import create_subprocess_shell, create_task
+from asyncio import CancelledError, Task, create_subprocess_shell, create_task
 from asyncio.subprocess import PIPE, STDOUT, Process
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from signal import SIGKILL, SIGTERM
 from typing import Optional
 
 from brood.config import CommandConfig
@@ -19,42 +20,45 @@ class EventType(Enum):
 
 @dataclass(frozen=True)
 class Event:
-    manager: CommandManager
+    manager: Command
     type: EventType
 
 
 @dataclass
-class CommandManager:
-    command_config: CommandConfig
+class Command:
+    config: CommandConfig
 
-    events: Fanout[Event]
-    messages: Fanout[Message]
+    events: Fanout[Event] = field(repr=False)
+    messages: Fanout[Message] = field(repr=False)
 
-    process: Process
+    process: Process = field(repr=False)
 
     width: int = 80
 
     was_killed: bool = False
 
+    reader: Optional[Task[None]] = None
+
     @classmethod
     async def start(
         cls,
-        command_config: CommandConfig,
+        config: CommandConfig,
         events: Fanout[Event],
         messages: Fanout[Message],
         width: int = 80,
-    ) -> CommandManager:
-        await messages.put(InternalMessage(f"Starting command: {command_config.command_string!r}"))
+    ) -> Command:
+        await messages.put(InternalMessage(f"Starting command: {config.command_string!r}"))
 
         process = await create_subprocess_shell(
-            command_config.command_string,
+            config.command_string,
             stdout=PIPE,
             stderr=STDOUT,
             env={**os.environ, "FORCE_COLOR": "true", "COLUMNS": str(width)},
+            preexec_fn=os.setsid,
         )
 
         manager = cls(
-            command_config=command_config,
+            config=config,
             width=width,
             process=process,
             events=events,
@@ -66,7 +70,9 @@ class CommandManager:
         return manager
 
     def __post_init__(self) -> None:
-        create_task(self.read_output())
+        self.reader = create_task(
+            self.read_output(), name=f"output reader for {self.config.command_string!r}"
+        )
         create_task(self.wait())
 
     @property
@@ -77,6 +83,9 @@ class CommandManager:
     def has_exited(self) -> bool:
         return self.exit_code is not None
 
+    def _send_signal(self, signal: int) -> None:
+        os.killpg(os.getpgid(self.process.pid), signal)
+
     async def terminate(self) -> None:
         if self.has_exited:
             return None
@@ -84,10 +93,10 @@ class CommandManager:
         self.was_killed = True
 
         await self.messages.put(
-            InternalMessage(f"Stopping command: {self.command_config.command_string!r}")
+            InternalMessage(f"Terminating command: {self.config.command_string!r}")
         )
 
-        self.process.terminate()
+        self._send_signal(SIGTERM)
 
     async def kill(self) -> None:
         if self.has_exited:
@@ -95,15 +104,21 @@ class CommandManager:
 
         self.was_killed = True
 
-        await self.messages.put(
-            InternalMessage(f"Killing command: {self.command_config.command_string!r}")
-        )
+        await self.messages.put(InternalMessage(f"Killing command: {self.config.command_string!r}"))
 
-        self.process.kill()
+        self._send_signal(SIGKILL)
 
-    async def wait(self) -> CommandManager:
+    async def wait(self) -> Command:
         await self.process.wait()
+
+        if self.reader:
+            try:
+                await self.reader
+            except CancelledError:
+                pass
+
         await self.events.put(Event(manager=self, type=EventType.Stopped))
+
         return self
 
     async def read_output(self) -> None:
@@ -118,9 +133,9 @@ class CommandManager:
             await self.messages.put(
                 CommandMessage(
                     text=line.decode("utf-8").rstrip(),
-                    command_config=self.command_config,
+                    command_config=self.config,
                 )
             )
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.command_config, self.process.pid))
+        return hash((self.__class__, self.config, self.process.pid))

@@ -21,7 +21,7 @@ from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
-from brood.command import CommandManager, Event, EventType
+from brood.command import Command, Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
 from brood.message import CommandMessage, InternalMessage, Message
 from brood.utils import delay
@@ -74,7 +74,7 @@ class Renderer:
     messages: Queue[Message]
     events: Queue[Event]
 
-    def available_process_width(self, command: CommandConfig) -> int:
+    def available_process_width(self, command_config: CommandConfig) -> int:
         raise NotImplementedError
 
     async def mount(self) -> None:
@@ -138,10 +138,11 @@ class Renderer:
 
 @dataclass(frozen=True)
 class NullRenderer(Renderer):
-    def available_process_width(self, command: CommandConfig) -> int:
+    def available_process_width(self, command_config: CommandConfig) -> int:
         return shutil.get_terminal_size().columns
 
 
+DOTS = ["dots"] + [f"dots{n}" for n in range(2, 12)]
 GREEN_CHECK = Text("✔", style="green")
 RED_X = Text("✘", style="red")
 
@@ -158,14 +159,11 @@ class TimeElapsedColumn(ProgressColumn):
         return Text(str(delta), style="dim")
 
 
-DIM_RULE = Rule(style="dim")
-
-
 @dataclass(frozen=True)
 class LogRenderer(Renderer):
     config: LogRendererConfig
 
-    status_bars: Dict[CommandManager, Progress] = field(default_factory=dict)
+    status_bars: Dict[Command, Progress] = field(default_factory=dict)
     stop_tasks: List[asyncio.Task[None]] = field(default_factory=list)
 
     def prefix_width(self, command_config: CommandConfig) -> int:
@@ -191,7 +189,7 @@ class LogRenderer(Renderer):
         for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
             table.add_row(v)  # type: ignore
 
-        self.live.update(Group(DIM_RULE, table))
+        self.live.update(Group(Rule(style="dim"), table), refresh=True)
 
     async def mount(self) -> None:
         if not self.config.status_tracker:
@@ -210,14 +208,14 @@ class LogRenderer(Renderer):
             return
 
         p = Progress(
-            SpinnerColumn(spinner_name=choice(["dots"] + [f"dots{n}" for n in range(2, 12)])),
+            SpinnerColumn(spinner_name=choice(DOTS), style=NULL_STYLE),
             RenderableColumn(Text("  ?", style="dim")),
             RenderableColumn(Text(str(event.manager.process.pid).rjust(5), style="dim")),
             TimeElapsedColumn(),
             RenderableColumn(
                 Text(
-                    event.manager.command_config.command_string,
-                    style=event.manager.command_config.prefix_style or self.config.prefix_style,
+                    event.manager.config.command_string,
+                    style=event.manager.config.prefix_style or self.config.prefix_style,
                 )
             ),
             console=self.console,
@@ -245,7 +243,7 @@ class LogRenderer(Renderer):
 
         self.stop_tasks.append(delay(10, partial(self.remove_status_bar, manager=event.manager)))
 
-    async def remove_status_bar(self, manager: CommandManager, delay: int = 10) -> None:
+    async def remove_status_bar(self, manager: Command, delay: int = 10) -> None:
         self.status_bars.pop(manager, None)
 
         self.update_live()

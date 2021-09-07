@@ -11,3 +11,9 @@
 
 A flexible concurrent command runner,
 inspired by [Concurrently](https://github.com/open-cli-tools/concurrently) and powered by [Rich](https://github.com/willmcgugan/rich).
+
+
+## Platform Support
+
+Brood currently supports POSIX systems like Linux and MacOS.
+You can try to run it on Windows, but it probably won't work!

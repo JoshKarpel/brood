@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "brood"
-version = "0.1.0"
+version = "0.2.0"
 description = "A flexible concurrent command runner."
 readme="README.md"
 license = "MIT"
@@ -16,7 +16,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Operating System :: Unix",
-    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Intended Audience :: Developers",

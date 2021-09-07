@@ -1,25 +1,14 @@
 from __future__ import annotations
 
-from asyncio import FIRST_EXCEPTION, CancelledError, Queue, gather, get_running_loop, wait
+from asyncio import FIRST_EXCEPTION, Queue, gather, get_running_loop, wait
 from dataclasses import dataclass, field
 from functools import partial
-from types import TracebackType
-from typing import AsyncContextManager, List, Optional, Set, Type
+from typing import List, Mapping, Set
 
-from rich.console import Console
-
-from brood.command import CommandManager, Event, EventType
-from brood.config import (
-    BroodConfig,
-    CommandConfig,
-    FailureMode,
-    OnceConfig,
-    RestartConfig,
-    WatchConfig,
-)
+from brood.command import Command, Event, EventType
+from brood.config import BroodConfig, CommandConfig, FailureMode, RestartConfig, WatchConfig
 from brood.fanout import Fanout
 from brood.message import InternalMessage, Message
-from brood.renderer import RENDERERS, Renderer
 from brood.utils import delay, drain_queue
 from brood.watch import FileWatcher, StartCommandHandler, WatchEvent
 
@@ -29,50 +18,31 @@ class KillOthers(Exception):
 
 
 @dataclass
-class Monitor(AsyncContextManager["Monitor"]):
+class Monitor:
     config: BroodConfig
-
-    renderer: Renderer
 
     events: Fanout[Event]
     messages: Fanout[Message]
 
-    events_consumer: Queue[Event]
+    widths: Mapping[CommandConfig, int]
 
-    managers: Set[CommandManager] = field(default_factory=set)
+    managers: Set[Command] = field(default_factory=set)
     watchers: List[FileWatcher] = field(default_factory=list)
 
-    @classmethod
-    def create(cls, config: BroodConfig, console: Console) -> Monitor:
-        renderer_type = RENDERERS[config.renderer.type]
+    events_consumer: Queue[Event] = field(init=False)
 
-        events: Fanout[Event] = Fanout()
-        messages: Fanout[Message] = Fanout()
-
-        renderer = renderer_type(
-            config=config.renderer,
-            console=console,
-            events=events.consumer(),
-            messages=messages.consumer(),
-        )
-
-        return cls(
-            config=config,
-            renderer=renderer,
-            events=events,
-            events_consumer=events.consumer(),
-            messages=messages,
-        )
+    def __post_init__(self) -> None:
+        self.events_consumer = self.events.consumer()
 
     async def start_commands(self) -> None:
         await gather(*(self.start_command(command) for command in self.config.commands))
 
     async def start_command(self, command_config: CommandConfig) -> None:
-        await CommandManager.start(
-            command_config=command_config,
+        await Command.start(
+            config=command_config,
             events=self.events,
             messages=self.messages,
-            width=self.renderer.available_process_width(command_config),
+            width=self.widths[command_config],
         )
 
     async def run(self) -> None:
@@ -82,26 +52,16 @@ class Monitor(AsyncContextManager["Monitor"]):
             (
                 self.handle_events(),
                 self.handle_watchers(),
-                self.renderer.mount(),
-                self.renderer.run(),
             ),
             return_when=FIRST_EXCEPTION,
         )
 
         for d in done:
-            try:
-                d.result()
-            except KillOthers as e:
-                manager = e.args[0]
-                await self.messages.put(
-                    InternalMessage(
-                        f"Killing other processes due to command failing with code {manager.exit_code}: {manager.command_config.command_string!r}"
-                    )
-                )
+            d.result()
 
     async def handle_events(self, drain: bool = False) -> None:
         while True:
-            if drain and len(self.managers) == 0:
+            if drain and len(self.managers) == 0 and self.events_consumer.qsize() == 0:
                 return
 
             event = await self.events_consumer.get()
@@ -109,27 +69,30 @@ class Monitor(AsyncContextManager["Monitor"]):
             if event.type is EventType.Started:
                 self.managers.add(event.manager)
             elif event.type is EventType.Stopped:
-                self.managers.remove(event.manager)
+                try:
+                    self.managers.remove(event.manager)
+                except KeyError:
+                    return  # it's ok to get multiple stop events for the same manager, e.g., during shutdown
 
                 await self.messages.put(
                     InternalMessage(
-                        f"Command exited with code {event.manager.exit_code}: {event.manager.command_config.command_string!r}"
+                        f"Command exited with code {event.manager.exit_code}: {event.manager.config.command_string!r}"
                     )
                 )
 
                 if (
-                    self.config.failure_mode is FailureMode.KILL_OTHERS
+                    self.config.failure_mode == FailureMode.KILL_OTHERS
                     and event.manager.exit_code != 0
                     and not event.manager.was_killed
                 ):
                     raise KillOthers(event.manager)
 
-                if isinstance(event.manager.command_config.starter, RestartConfig):
+                if isinstance(event.manager.config.starter, RestartConfig):
                     delay(
-                        event.manager.command_config.starter.delay,
+                        event.manager.config.starter.delay,
                         partial(
                             self.start_command,
-                            command_config=event.manager.command_config,
+                            command_config=event.manager.config,
                         ),
                     )
 
@@ -157,7 +120,7 @@ class Monitor(AsyncContextManager["Monitor"]):
                     and not watch_event.command_config.starter.allow_multiple
                 ):
                     for manager in self.managers:
-                        if manager.command_config is watch_event.command_config:
+                        if manager.config is watch_event.command_config:
                             stops.add(manager)
 
                 watch_events.task_done()
@@ -177,43 +140,11 @@ class Monitor(AsyncContextManager["Monitor"]):
 
             await gather(*(self.start_command(command_config=config) for config in starts))
 
-    async def __aenter__(self) -> Monitor:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> Optional[bool]:
-        if exc_val:
-            if exc_type is CancelledError:
-                text = f"Shutting down due to: keyboard interrupt"
-            else:
-                text = f"Shutting down due to: {exc_type}"
-            await self.messages.put(InternalMessage(text))
-
+    async def stop(self) -> None:
         await self.terminate()
-        await self.renderer.run(drain=True)
-
         await self.wait()
-        await self.renderer.run(drain=True)
-
         await self.shutdown()
-        await self.renderer.run(drain=True)
-
         await self.wait()
-        await self.renderer.run(drain=True)
-
-        await self.renderer.unmount()
-
-        return None
-
-    async def terminate(self) -> None:
-        await gather(*(manager.terminate() for manager in self.managers))
-
-        for watcher in self.watchers:
-            watcher.stop()
 
     async def wait(self) -> None:
         await gather(*(manager.wait() for manager in self.managers))
@@ -223,11 +154,13 @@ class Monitor(AsyncContextManager["Monitor"]):
         for watcher in self.watchers:
             watcher.join()
 
-    async def shutdown(self) -> None:
-        shutdown_commands = [
-            command.copy(update={"command": command.shutdown, "starter": OnceConfig()})
-            for command in self.config.commands
-            if command.shutdown
-        ]
+    async def terminate(self) -> None:
+        await gather(*(manager.terminate() for manager in self.managers))
 
-        await gather(*(self.start_command(command) for command in shutdown_commands))
+        for watcher in self.watchers:
+            watcher.stop()
+
+    async def shutdown(self) -> None:
+        shutdown_configs = [command.shutdown_config for command in self.config.commands]
+
+        await gather(*(self.start_command(config) for config in shutdown_configs if config))

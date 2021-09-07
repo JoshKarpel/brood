@@ -77,10 +77,6 @@ class CommandConfig(BaseConfig):
         default=None,
         description=f"The Rich style to apply to the prefix. Defaults to the renderer's 'prefix_style'.",
     )
-    message_style: Optional[str] = Field(
-        default=None,
-        description=f"The Rich style to apply to each line of output from this command. Defaults to the renderer's 'message_style'.",
-    )
 
     starter: Union[OnceConfig, RestartConfig, WatchConfig] = RestartConfig()
 
@@ -90,6 +86,13 @@ class CommandConfig(BaseConfig):
             return shlex.join(self.command)
         else:
             return self.command
+
+    @property
+    def shutdown_config(self) -> Optional[CommandConfig]:
+        if self.shutdown is None:
+            return None
+
+        return self.copy(update={"command": self.shutdown, "starter": OnceConfig()})
 
 
 class RendererConfig(BaseConfig):

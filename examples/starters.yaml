@@ -1,6 +1,6 @@
 commands:
   - name: "restart"
-    command: "echo timer ; mkdir -p /tmp/foobar ; echo foo > /tmp/foobar/test"
+    command: "echo timer && mkdir -p /tmp/foobar && echo foo > /tmp/foobar/test"
     prefix_style: "green"
 
   - name: "watch"
@@ -11,9 +11,14 @@ commands:
       paths: ["/tmp/foobar"]
 
   - name: "long"
-    command: "echo start; sleep 10; echo done"
+    command: "echo start && sleep 10 && echo done"
+    shutdown: "sleep 3 && echo shutdown"
     prefix_style: "cyan"
     starter:
       type: "watch"
       paths: ["/tmp/foobar"]
       allow_multiple: false
+
+renderer:
+  type: "log"
+  status_tracker: false

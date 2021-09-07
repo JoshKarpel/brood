@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Command output now wraps separately from the prefix [#12](https://github.com/JoshKarpel/brood/pull/12).
 - The process status table in the `log` renderer can now be disabled via configuration [#14](https://github.com/JoshKarpel/brood/pull/14).
+- `brood run` now exits with code 0 when sent a keyboard interrupt (`Ctrl-C`) [#14](https://github.com/JoshKarpel/brood/pull/14).
 
 ### Removed
 

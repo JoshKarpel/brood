@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import sys
 from pathlib import Path
 
+from click.exceptions import Exit
 from rich.console import Console
 from rich.json import JSON
 from rich.panel import Panel
@@ -36,9 +38,11 @@ def run(
 ) -> None:
     """
     Execute a configuration.
+
+    This command exits with code 0 as long as no internal errors occurred.
+    For example, using Ctrl-C to stop Brood from running will still result in an exit code of 0.
     """
     console = Console()
-    # install(console=console, show_locals=True, width=shutil.get_terminal_size().columns)
 
     config = BroodConfig.load(config_path)
 
@@ -59,10 +63,13 @@ def run(
     if debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    asyncio.run(_run(config, console), debug=debug)
+    try:
+        asyncio.run(execute(config, console), debug=debug)
+    except KeyboardInterrupt:
+        raise Exit(code=0)
 
 
-async def _run(config: BroodConfig, console: Console) -> None:
+async def execute(config: BroodConfig, console: Console) -> None:
     async with Executor(config=config, console=console) as executor:
         await executor.run()
 
@@ -70,7 +77,7 @@ async def _run(config: BroodConfig, console: Console) -> None:
 @app.command()
 def schema(plain: bool = Option(False)) -> None:
     """
-    Display the schema for the Brood configuration file.
+    Display the Brood configuration file schema.
     """
     console = Console()
 

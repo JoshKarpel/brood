@@ -1,19 +1,15 @@
 import asyncio
 import logging
-import shutil
-import sys
 from pathlib import Path
 
 from rich.console import Console
 from rich.json import JSON
 from rich.panel import Panel
-from rich.traceback import install
 from typer import Argument, Option, Typer
 
 from brood.config import BroodConfig
 from brood.constants import PACKAGE_NAME, __version__
 from brood.executor import Executor
-from brood.monitor import Monitor
 
 app = Typer()
 

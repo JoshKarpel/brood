@@ -11,7 +11,7 @@ from brood.config import BroodConfig
 from brood.fanout import Fanout
 from brood.message import InternalMessage, Message
 from brood.monitor import KillOthers, Monitor
-from brood.renderer import RENDERERS, Renderer
+from brood.renderer import RENDERERS
 
 
 class Executor:

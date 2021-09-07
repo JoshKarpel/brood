@@ -1,18 +1,11 @@
 from __future__ import annotations
 
 import os
-from asyncio import (
-    FIRST_COMPLETED,
-    CancelledError,
-    Task,
-    create_subprocess_shell,
-    create_task,
-    wait,
-)
+from asyncio import CancelledError, Task, create_subprocess_shell, create_task
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass, field
 from enum import Enum
-from signal import SIGINT, SIGKILL, SIGTERM
+from signal import SIGKILL, SIGTERM
 from typing import Optional
 
 from brood.config import CommandConfig

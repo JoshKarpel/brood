@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shlex
 from enum import Enum
-from functools import cached_property
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Set, Union
 

@@ -1,25 +1,14 @@
 from __future__ import annotations
 
-from asyncio import FIRST_EXCEPTION, CancelledError, Queue, gather, get_running_loop, wait
+from asyncio import FIRST_EXCEPTION, Queue, gather, get_running_loop, wait
 from dataclasses import dataclass, field
 from functools import partial
-from types import TracebackType
-from typing import AsyncContextManager, List, Mapping, Optional, Set, Type
-
-from rich.console import Console
+from typing import List, Mapping, Set
 
 from brood.command import CommandManager, Event, EventType
-from brood.config import (
-    BroodConfig,
-    CommandConfig,
-    FailureMode,
-    OnceConfig,
-    RestartConfig,
-    WatchConfig,
-)
+from brood.config import BroodConfig, CommandConfig, FailureMode, RestartConfig, WatchConfig
 from brood.fanout import Fanout
 from brood.message import InternalMessage, Message
-from brood.renderer import RENDERERS, Renderer
 from brood.utils import delay, drain_queue
 from brood.watch import FileWatcher, StartCommandHandler, WatchEvent
 

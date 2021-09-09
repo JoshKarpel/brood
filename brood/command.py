@@ -71,9 +71,9 @@ class Command:
 
     def __post_init__(self) -> None:
         self.reader = create_task(
-            self.read_output(), name=f"output reader for {self.config.command_string!r}"
+            self.read_output(), name=f"Read output for {self.config.command_string!r}"
         )
-        create_task(self.wait())
+        create_task(self.wait(), name=f"Wait for {self.config.command_string!r}")
 
     @property
     def exit_code(self) -> Optional[int]:

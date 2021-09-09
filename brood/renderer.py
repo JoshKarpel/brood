@@ -3,10 +3,19 @@ from __future__ import annotations
 import asyncio
 import re
 import shutil
-from asyncio import ALL_COMPLETED, FIRST_EXCEPTION, Queue, create_task, wait
+from asyncio import (
+    ALL_COMPLETED,
+    FIRST_EXCEPTION,
+    Queue,
+    all_tasks,
+    create_task,
+    current_task,
+    wait,
+)
 from dataclasses import dataclass, field
 from datetime import timedelta
 from functools import cached_property, partial
+from pathlib import Path
 from random import choice
 from shutil import get_terminal_size
 from typing import Dict, List, Literal, Mapping, Type
@@ -18,7 +27,7 @@ from rich.live import Live
 from rich.progress import Progress, ProgressColumn, RenderableColumn, SpinnerColumn, Task, TaskID
 from rich.rule import Rule
 from rich.style import Style
-from rich.table import Table
+from rich.table import Column, Table
 from rich.text import Text
 
 from brood.command import Command, Event, EventType
@@ -178,18 +187,16 @@ class LogRenderer(Renderer):
     def live(self) -> Live:
         return Live(
             console=self.console,
+            renderable=self.status_tracker,
             auto_refresh=True,
             refresh_per_second=10,
             transient=True,
             screen=False,
         )
 
-    def update_live(self) -> None:
-        table = Table.grid(expand=True)
-        for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
-            table.add_row(v)  # type: ignore
-
-        self.live.update(Group(Rule(style="dim"), table), refresh=True)
+    @cached_property
+    def status_tracker(self):
+        return StatusTable(self.status_bars)
 
     async def mount(self) -> None:
         if not self.config.status_tracker:
@@ -224,8 +231,6 @@ class LogRenderer(Renderer):
 
         self.status_bars[event.manager] = p
 
-        self.update_live()
-
     async def handle_stopped_event(self, event: Event) -> None:
         if not self.config.status_tracker:
             return
@@ -245,8 +250,6 @@ class LogRenderer(Renderer):
 
     async def remove_status_bar(self, manager: Command, delay: int = 10) -> None:
         self.status_bars.pop(manager, None)
-
-        self.update_live()
 
     async def handle_internal_message(self, message: InternalMessage) -> None:
         self.console.print(self.render_internal_message(message), soft_wrap=True)
@@ -285,6 +288,35 @@ class LogRenderer(Renderer):
             ),
             style=message.command_config.prefix_style or self.config.prefix_style,
         )
+
+
+@dataclass(frozen=True)
+class StatusTable:
+    status_bars: Dict[Command, Progress]
+
+    def __rich__(self) -> ConsoleRenderable:
+        table = Table.grid(expand=True, padding=(0, 1))
+        for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
+            table.add_row(v)  # type: ignore
+
+        debug_table = Table.grid(expand=False, padding=(0, 1))
+        active_task = current_task()
+        for task in sorted(all_tasks(), key=lambda task: task.get_name()):
+            frame = task.get_stack(limit=1)[0]
+            code = frame.f_code
+
+            debug_table.add_row(
+                "|",
+                task.get_name(),
+                f"{code.co_name}()",
+                f"{Path(code.co_filename).name}.py:{frame.f_lineno}",
+                style=Style(dim=task is not active_task),
+            )
+
+        ubertable = Table.grid(expand=True, padding=(0, 2))
+        ubertable.add_row(table, debug_table)
+
+        return Group(Rule(style="dim"), ubertable)
 
 
 RENDERERS: Mapping[Literal["null", "log"], Type[Renderer]] = {

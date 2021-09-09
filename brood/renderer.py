@@ -6,10 +6,12 @@ import shutil
 from asyncio import (
     ALL_COMPLETED,
     FIRST_EXCEPTION,
+    AbstractEventLoop,
     Queue,
     all_tasks,
     create_task,
     current_task,
+    get_running_loop,
     wait,
 )
 from dataclasses import dataclass, field
@@ -27,7 +29,7 @@ from rich.live import Live
 from rich.progress import Progress, ProgressColumn, RenderableColumn, SpinnerColumn, Task, TaskID
 from rich.rule import Rule
 from rich.style import Style
-from rich.table import Column, Table
+from rich.table import Table
 from rich.text import Text
 
 from brood.command import Command, Event, EventType
@@ -95,8 +97,12 @@ class Renderer:
     async def run(self, drain: bool = False) -> None:
         done, pending = await wait(
             (
-                create_task(self.handle_events(drain=drain)),
-                create_task(self.handle_messages(drain=drain)),
+                create_task(
+                    self.handle_events(drain=drain), name=f"{type(self).__name__} event handler"
+                ),
+                create_task(
+                    self.handle_messages(drain=drain), name=f"{type(self).__name__} message handler"
+                ),
             ),
             return_when=ALL_COMPLETED if drain else FIRST_EXCEPTION,
         )
@@ -187,16 +193,12 @@ class LogRenderer(Renderer):
     def live(self) -> Live:
         return Live(
             console=self.console,
-            renderable=self.status_tracker,
+            renderable=StatusTable(loop=get_running_loop(), status_bars=self.status_bars),
             auto_refresh=True,
             refresh_per_second=10,
             transient=True,
             screen=False,
         )
-
-    @cached_property
-    def status_tracker(self):
-        return StatusTable(self.status_bars)
 
     async def mount(self) -> None:
         if not self.config.status_tracker:
@@ -246,7 +248,13 @@ class LogRenderer(Renderer):
         )
         p.update(TaskID(0), completed=1)
 
-        self.stop_tasks.append(delay(10, partial(self.remove_status_bar, manager=event.manager)))
+        self.stop_tasks.append(
+            delay(
+                delay=10,
+                fn=partial(self.remove_status_bar, manager=event.manager),
+                name=f"Remove status entry for pid {event.manager.process.pid}",
+            )
+        )
 
     async def remove_status_bar(self, manager: Command, delay: int = 10) -> None:
         self.status_bars.pop(manager, None)
@@ -292,24 +300,23 @@ class LogRenderer(Renderer):
 
 @dataclass(frozen=True)
 class StatusTable:
+    loop: AbstractEventLoop
     status_bars: Dict[Command, Progress]
 
     def __rich__(self) -> ConsoleRenderable:
-        table = Table.grid(expand=True, padding=(0, 1))
+        table = Table.grid(expand=False, padding=(0, 1))
         for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
             table.add_row(v)  # type: ignore
 
         debug_table = Table.grid(expand=False, padding=(0, 1))
-        active_task = current_task()
-        for task in sorted(all_tasks(), key=lambda task: task.get_name()):
+        active_task = current_task(self.loop)
+        for task in sorted(all_tasks(self.loop), key=lambda task: task.get_name()):
             frame = task.get_stack(limit=1)[0]
             code = frame.f_code
 
             debug_table.add_row(
-                "|",
                 task.get_name(),
-                f"{code.co_name}()",
-                f"{Path(code.co_filename).name}.py:{frame.f_lineno}",
+                f"{Path(code.co_filename).name}:{frame.f_lineno}::{code.co_name}",
                 style=Style(dim=task is not active_task),
             )
 

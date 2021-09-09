@@ -1,6 +1,6 @@
 import asyncio
 import logging
-import sys
+from asyncio import create_task
 from pathlib import Path
 
 from click.exceptions import Exit
@@ -71,7 +71,7 @@ def run(
 
 async def execute(config: BroodConfig, console: Console) -> None:
     async with Executor(config=config, console=console) as executor:
-        await executor.run()
+        await create_task(executor.run(), name=f"Run {type(executor).__name__}")
 
 
 @app.command()

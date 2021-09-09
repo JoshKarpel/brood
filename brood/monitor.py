@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from asyncio import FIRST_EXCEPTION, Queue, gather, get_running_loop, wait
+from asyncio import FIRST_EXCEPTION, Queue, create_task, gather, get_running_loop, wait
 from dataclasses import dataclass, field
 from functools import partial
 from typing import List, Mapping, Set
@@ -50,8 +50,10 @@ class Monitor:
 
         done, pending = await wait(
             (
-                self.handle_events(),
-                self.handle_watchers(),
+                create_task(self.handle_events(), name=f"{type(self).__name__} event handler"),
+                create_task(
+                    self.handle_file_events(), name=f"{type(self).__name__} file event handler"
+                ),
             ),
             return_when=FIRST_EXCEPTION,
         )
@@ -98,7 +100,7 @@ class Monitor:
 
             self.events_consumer.task_done()
 
-    async def handle_watchers(self) -> None:
+    async def handle_file_events(self) -> None:
         watch_events: Queue[WatchEvent] = Queue()
 
         for config in self.config.commands:
@@ -107,6 +109,9 @@ class Monitor:
                 watcher = FileWatcher(config.starter, handler)
                 watcher.start()
                 self.watchers.append(watcher)
+
+        if not self.watchers:
+            return
 
         while True:
             # unique-ify on configs

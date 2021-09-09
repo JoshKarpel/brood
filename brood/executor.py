@@ -51,9 +51,9 @@ class Executor:
     async def run(self) -> None:
         done, pending = await wait(
             (
-                self.monitor.run(),
-                self.renderer.mount(),
-                self.renderer.run(),
+                create_task(self.monitor.run(), name=f"Run {type(self.monitor).__name__}"),
+                create_task(self.renderer.mount(), name=f"Mount {type(self.renderer).__name__}"),
+                create_task(self.renderer.run(), name=f"Run {type(self.renderer).__name__}"),
             ),
             return_when=FIRST_EXCEPTION,
         )
@@ -76,23 +76,26 @@ class Executor:
             elif exc_type is KillOthers:
                 text = f"Shutting down due to: command failing"
             else:
-                text = f"Shutting down due to: {exc_type.__name__}"
+                text = f"Shutting down due to: {exc_type.__name__}: {exc_val}"
             await self.messages.put(InternalMessage(text))
 
         # Stop the monitor while repeatedly draining the renderer,
         # so that we can emit output during shutdown.
-        stop_monitor = create_task(self.monitor.stop())
-        drain_renderer = create_task(self.renderer.run(drain=True))
+        stop_monitor = create_task(self.monitor.stop(), name=f"Stop {type(self.monitor).__name__}")
+        drain_renderer = create_task(
+            self.renderer.run(drain=True), name=f"Drain {type(self.renderer)}"
+        )
         while True:
             done, pending = await wait((stop_monitor, drain_renderer), return_when=FIRST_COMPLETED)
-
             if stop_monitor in done:
                 await drain_renderer
                 break
             else:
                 await sleep(0.001)
-                drain_renderer = create_task(self.renderer.run(drain=True))
+                drain_renderer = create_task(
+                    self.renderer.run(drain=True), name=f"Drain {type(self.renderer).__name__}"
+                )
 
-        await self.renderer.unmount()
+        await create_task(self.renderer.unmount(), name=f"Unmount {type(self.renderer).__name__}")
 
         return True

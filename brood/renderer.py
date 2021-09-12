@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 import shutil
 from asyncio import (
@@ -20,20 +21,29 @@ from functools import cached_property, partial
 from pathlib import Path
 from random import choice
 from shutil import get_terminal_size
-from typing import Dict, List, Literal, Mapping, Type
+from typing import Dict, List, Literal, Mapping, Optional, Type
 
 from colorama import Fore
 from colorama import Style as CStyle
 from rich.console import Console, ConsoleRenderable, Group
 from rich.live import Live
+from rich.panel import Panel
 from rich.progress import Progress, ProgressColumn, RenderableColumn, SpinnerColumn, Task, TaskID
 from rich.rule import Rule
 from rich.style import Style
 from rich.table import Table
 from rich.text import Text
+from textual.app import App
+from textual.events import Load, Mount
+from textual.reactive import Reactive
+from textual.scrollbar import ScrollDown
+from textual.view import View
+from textual.widget import Widget
+from textual.widgets import ScrollView
 
 from brood.command import Command, Event, EventType
-from brood.config import CommandConfig, LogRendererConfig, RendererConfig
+from brood.config import CommandConfig, LogRendererConfig, RendererConfig, TUIRendererConfig
+from brood.constants import PACKAGE_NAME
 from brood.message import CommandMessage, InternalMessage, Message, Verbosity
 from brood.utils import delay
 
@@ -142,7 +152,7 @@ class Renderer:
             message = await self.messages.get()
 
             if isinstance(message, InternalMessage):
-                if message.verbosity <= self.verbosity:
+                if message.verbosity >= self.verbosity:
                     await self.handle_internal_message(message)
             elif isinstance(message, CommandMessage):
                 await self.handle_command_message(message)
@@ -307,6 +317,151 @@ class LogRenderer(Renderer):
         )
 
 
+class MessageHistory(Widget):
+    def __init__(self, *args, **kwargs):
+        self.grid = Table.grid()
+        self.scroll_view: Optional[ScrollView] = None
+        super().__init__(*args, **kwargs)
+
+    def append(self, message):
+        self.grid.add_row(message)
+        self.refresh(repaint=True, layout=True)
+        self.scroll_view.refresh(repaint=True, layout=True)
+        self.scroll_view.y = self.scroll_view.target_y = math.inf
+        self.scroll_view.refresh(repaint=True, layout=True)
+
+    def render(self) -> ConsoleRenderable:
+        return self.grid
+
+
+@dataclass(frozen=True)
+class TUIRenderer(Renderer):
+    config: TUIRendererConfig
+
+    message_history: MessageHistory = field(default_factory=MessageHistory)
+
+    status_bars: Dict[Command, Progress] = field(default_factory=dict)
+    stop_tasks: List[asyncio.Task[None]] = field(default_factory=list)
+
+    def available_process_width(self, command_config: CommandConfig) -> int:
+        return 80
+
+    async def mount(self) -> None:
+        app = RendererApp(
+            title=PACKAGE_NAME.title(),
+            console=self.console,
+            message_history=self.message_history,
+            status_table=StatusTable(
+                loop=get_running_loop(),
+                status_bars=self.status_bars,
+                show_task_status=self.verbosity.is_debug,
+            ),
+            log="debug.log",
+        )
+
+        await app.process_messages()
+
+    async def unmount(self) -> None:
+        for task in self.stop_tasks:
+            task.cancel()
+
+    async def handle_started_event(self, event: Event) -> None:
+        p = Progress(
+            SpinnerColumn(spinner_name=choice(DOTS), style=NULL_STYLE),
+            RenderableColumn(Text("  ?", style="dim")),
+            RenderableColumn(Text(str(event.manager.process.pid).rjust(5), style="dim")),
+            TimeElapsedColumn(),
+            RenderableColumn(
+                Text(
+                    event.manager.config.command_string,
+                    style=event.manager.config.prefix_style or self.config.prefix_style,
+                )
+            ),
+            console=self.console,
+        )
+        p.add_task("", total=1)
+
+        self.status_bars[event.manager] = p
+
+    async def handle_stopped_event(self, event: Event) -> None:
+        p = self.status_bars.get(event.manager, None)
+        if p is None:
+            return
+
+        p.columns[0].finished_text = GREEN_CHECK if event.manager.exit_code == 0 else RED_X  # type: ignore
+        p.columns[1].renderable = Text(  # type: ignore
+            str(event.manager.exit_code).rjust(3),
+            style="green" if event.manager.exit_code == 0 else "red",
+        )
+        p.update(TaskID(0), completed=1)
+
+        self.stop_tasks.append(
+            delay(
+                delay=10,
+                fn=partial(self.remove_status_bar, manager=event.manager),
+                name=f"Remove status entry for pid {event.manager.process.pid}",
+            )
+        )
+
+    async def remove_status_bar(self, manager: Command) -> None:
+        self.status_bars.pop(manager, None)
+
+    async def handle_internal_message(self, message: InternalMessage) -> None:
+        self.message_history.append(self.render_internal_message(message))
+
+    def render_internal_message(self, message: InternalMessage) -> ConsoleRenderable:
+        prefix = Text.from_markup(
+            self.config.internal_prefix.format_map({"timestamp": message.timestamp}),
+            style=self.config.internal_prefix_style,
+        )
+        body = Text(
+            message.text,
+            style=self.config.internal_message_style,
+        )
+
+        g = Table.grid()
+        g.add_row(prefix, body)
+
+        return g
+
+    async def handle_command_message(self, message: CommandMessage) -> None:
+        self.message_history.append(self.render_command_message(message))
+
+    def render_command_message(self, message: CommandMessage) -> ConsoleRenderable:
+        g = Table.grid()
+        g.add_row(self.render_command_prefix(message), ansi_to_text(message.text))
+
+        return g
+
+    def render_command_prefix(self, message: CommandMessage) -> Text:
+        return Text.from_markup(
+            (message.command_config.prefix or self.config.prefix).format_map(
+                {
+                    "name": message.command_config.name,
+                    "timestamp": message.timestamp,
+                }
+            ),
+            style=message.command_config.prefix_style or self.config.prefix_style,
+        )
+
+
+class RendererApp(App):
+    def __init__(self, *args, message_history: MessageHistory, status_table: StatusTable, **kwargs):
+        self.message_history = message_history
+        self.status_table = status_table
+        super().__init__(*args, **kwargs)
+
+    async def on_load(self, event: Load) -> None:
+        return
+
+    async def on_mount(self, event: Mount) -> None:
+        logs = ScrollView(self.message_history, name="logs")
+        self.message_history.scroll_view = logs
+        status = ScrollView(self.status_table, name="status")
+
+        await self.view.dock(*(logs, status), edge="top")
+
+
 @dataclass(frozen=True)
 class StatusTable:
     loop: AbstractEventLoop
@@ -341,7 +496,8 @@ class StatusTable:
         return Group(DIM_RULE, ubertable)
 
 
-RENDERERS: Mapping[Literal["null", "log"], Type[Renderer]] = {
+RENDERERS: Mapping[Literal["null", "log", "tui"], Type[Renderer]] = {
     "null": NullRenderer,
     "log": LogRenderer,
+    "tui": TUIRenderer,
 }

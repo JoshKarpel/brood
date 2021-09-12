@@ -58,6 +58,8 @@ def run(
             )
         )
 
+        logging.basicConfig(filename="logging.log", level=logging.DEBUG)
+
     if dry:
         return
 

@@ -130,6 +130,28 @@ class LogRendererConfig(RendererConfig):
     )
 
 
+class TUIRendererConfig(RendererConfig):
+    type: Literal["tui"] = "tui"
+
+    prefix: str = "{timestamp:%H:%M:%S.%f} {name} "
+
+    prefix_style: str = Field(
+        default="", description="The default style for prefixing command output."
+    )
+
+    internal_prefix: str = Field(
+        default="{timestamp:%H:%M:%S.%f} ",
+        description="The format string for the prefix to display before each internal message.",
+    )
+    internal_prefix_style: str = Field(
+        default="dim",
+        description="The style to apply to the prefix displayed before each internal message.",
+    )
+    internal_message_style: str = Field(
+        default="dim", description="The style to apply to each internal message."
+    )
+
+
 class FailureMode(str, Enum):
     CONTINUE = "continue"
     KILL_OTHERS = "kill_others"
@@ -148,7 +170,7 @@ class BroodConfig(BaseConfig):
     )
 
     commands: List[CommandConfig] = Field(default_factory=list, description="The commands to run.")
-    renderer: Union[NullRendererConfig, LogRendererConfig] = Field(
+    renderer: Union[NullRendererConfig, LogRendererConfig, TUIRendererConfig] = Field(
         default=LogRendererConfig(), description="The renderer to use."
     )
 

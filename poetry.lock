@@ -416,6 +416,17 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "textual"
+version = "0.1.11"
+description = "Text User Interface using Rich"
+category = "main"
+optional = false
+python-versions = ">=3.7,<4.0"
+
+[package.dependencies]
+rich = ">=10.7.0,<11.0.0"
+
+[[package]]
 name = "toml"
 version = "0.10.2"
 description = "Python Library for Tom's Obvious, Minimal Language"
@@ -489,7 +500,7 @@ watchmedo = ["PyYAML (>=3.10)", "argh (>=0.24.1)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9"
-content-hash = "7b98587620f40bdcad3d3271066b37dec78edd3b1f13cee5127d001cc21d9754"
+content-hash = "579b6487c812edc7cf83417bce27f330daadf35c27e4e4b7e1f119f0d9dc4222"
 
 [metadata.files]
 alt-pytest-asyncio = [
@@ -772,6 +783,10 @@ smmap = [
 sortedcontainers = [
     {file = "sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0"},
     {file = "sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88"},
+]
+textual = [
+    {file = "textual-0.1.11-py3-none-any.whl", hash = "sha256:8fc16b751c722cd7a258a5173f08cd32253f4cf165a73e71ad109e0e03546ef3"},
+    {file = "textual-0.1.11.tar.gz", hash = "sha256:51cb6d6cfd1554a3c18f069fc3d63f98329bac39712de6193099a75f2b3ed03c"},
 ]
 toml = [
     {file = "toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b"},

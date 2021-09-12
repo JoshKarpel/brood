@@ -12,4 +12,7 @@ commands:
     prefix_style: "cyan"
     starter:
       type: "watch"
-      paths: ["brood/", "tests/"]
+      paths: [ "brood/", "tests/" ]
+
+renderer:
+  type: "tui"

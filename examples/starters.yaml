@@ -20,5 +20,4 @@ commands:
       allow_multiple: false
 
 renderer:
-  type: "log"
-  status_tracker: false
+  type: "tui"

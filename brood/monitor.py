@@ -8,7 +8,7 @@ from typing import List, Mapping, Set
 from brood.command import Command, Event, EventType
 from brood.config import BroodConfig, CommandConfig, FailureMode, RestartConfig, WatchConfig
 from brood.fanout import Fanout
-from brood.message import InternalMessage, Message
+from brood.message import InternalMessage, Message, Verbosity
 from brood.utils import delay, drain_queue
 from brood.watch import FileWatcher, StartCommandHandler, WatchEvent
 
@@ -78,7 +78,8 @@ class Monitor:
 
                 await self.messages.put(
                     InternalMessage(
-                        f"Command exited with code {event.manager.exit_code}: {event.manager.config.command_string!r}"
+                        f"Command exited with code {event.manager.exit_code}: {event.manager.config.command_string!r}",
+                        verbosity=Verbosity.INFO,
                     )
                 )
 
@@ -136,7 +137,8 @@ class Monitor:
                 *(
                     self.messages.put(
                         InternalMessage(
-                            f"Path {event.src_path} was {event.event_type}, starting command: {config.command_string!r}"
+                            f"Path {event.src_path} was {event.event_type}, starting command: {config.command_string!r}",
+                            verbosity=Verbosity.INFO,
                         )
                     )
                     for config, event in starts.items()

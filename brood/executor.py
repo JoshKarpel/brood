@@ -9,15 +9,16 @@ from rich.console import Console
 from brood.command import Event
 from brood.config import BroodConfig
 from brood.fanout import Fanout
-from brood.message import InternalMessage, Message
+from brood.message import InternalMessage, Message, Verbosity
 from brood.monitor import KillOthers, Monitor
 from brood.renderer import RENDERERS
 
 
 class Executor:
-    def __init__(self, config: BroodConfig, console: Console):
+    def __init__(self, config: BroodConfig, console: Console, verbosity: Verbosity):
         self.config = config
         self.console = console
+        self.verbosity = verbosity
 
         self.events: Fanout[Event] = Fanout()
         self.messages: Fanout[Message] = Fanout()
@@ -25,6 +26,7 @@ class Executor:
         self.renderer = RENDERERS[config.renderer.type](
             config=self.config.renderer,
             console=self.console,
+            verbosity=self.verbosity,
             events=self.events.consumer(),
             messages=self.messages.consumer(),
         )
@@ -72,12 +74,24 @@ class Executor:
     ) -> Optional[bool]:
         if exc_type:
             if exc_type is CancelledError:
-                text = f"Shutting down due to: keyboard interrupt"
+                await self.messages.put(
+                    InternalMessage(
+                        f"Shutting down due to: keyboard interrupt", verbosity=Verbosity.INFO
+                    )
+                )
             elif exc_type is KillOthers:
-                text = f"Shutting down due to: command failing"
+                await self.messages.put(
+                    InternalMessage(
+                        f"Shutting down due to: command failing", verbosity=Verbosity.INFO
+                    )
+                )
             else:
-                text = f"Shutting down due to: {exc_type.__name__}: {exc_val}"
-            await self.messages.put(InternalMessage(text))
+                await self.messages.put(
+                    InternalMessage(
+                        f"Shutting down due to: {exc_type.__name__}: {exc_val}",
+                        verbosity=Verbosity.ERROR,
+                    )
+                )
 
         # Stop the monitor while repeatedly draining the renderer,
         # so that we can emit output during shutdown.

@@ -12,6 +12,7 @@ from typer import Argument, Option, Typer
 from brood.config import BroodConfig
 from brood.constants import PACKAGE_NAME, __version__
 from brood.executor import Executor
+from brood.message import Verbosity
 
 app = Typer()
 
@@ -19,7 +20,7 @@ app = Typer()
 @app.command()
 def run(
     config_path: Path = Argument(
-        "brood.yaml",
+        default="brood.yaml",
         metavar="config",
         exists=True,
         readable=True,
@@ -27,13 +28,15 @@ def run(
         envvar="BROOD_CONFIG",
         help="The path to the configuration file to execute.",
     ),
-    dry: bool = Option(False, help="If enabled, do not run actually run any commands."),
-    verbose: bool = Option(
-        False, help=f"If enabled, {PACKAGE_NAME} will print extra information as it runs."
-    ),
-    debug: bool = Option(
+    dry: bool = Option(
         False,
-        help=f"If enabled, {PACKAGE_NAME} will run with the underlying event loop in debug mode.",
+        help="If enabled, do not run actually run any commands.",
+    ),
+    verbosity: Verbosity = Option(
+        Verbosity.INFO,
+        "-v",
+        case_sensitive=False,
+        help="Set the verbosity level for Brood's monitoring and error displays.",
     ),
 ) -> None:
     """
@@ -46,9 +49,7 @@ def run(
 
     config = BroodConfig.load(config_path)
 
-    verbose = verbose or debug
-
-    if verbose:
+    if verbosity.is_debug:
         console.print(
             Panel(
                 JSON.from_data(config.dict()),
@@ -60,17 +61,14 @@ def run(
     if dry:
         return
 
-    if debug:
-        logging.basicConfig(level=logging.DEBUG)
-
     try:
-        asyncio.run(execute(config, console), debug=debug)
+        asyncio.run(execute(config, console, verbosity), debug=verbosity.is_debug)
     except KeyboardInterrupt:
         raise Exit(code=0)
 
 
-async def execute(config: BroodConfig, console: Console) -> None:
-    async with Executor(config=config, console=console) as executor:
+async def execute(config: BroodConfig, console: Console, verbosity: Verbosity) -> None:
+    async with Executor(config=config, console=console, verbosity=verbosity) as executor:
         await create_task(executor.run(), name=f"Run {type(executor).__name__}")
 
 

@@ -34,8 +34,10 @@ from rich.text import Text
 
 from brood.command import Command, Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
-from brood.message import CommandMessage, InternalMessage, Message
+from brood.message import CommandMessage, InternalMessage, Message, Verbosity
 from brood.utils import delay
+
+DIM_RULE = Rule(style="dim")
 
 NULL_STYLE = Style.null()
 RE_ANSI_ESCAPE = re.compile(r"(\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))")
@@ -81,6 +83,8 @@ def ansi_to_text(s: str) -> Text:
 class Renderer:
     config: RendererConfig
     console: Console
+
+    verbosity: Verbosity
 
     messages: Queue[Message]
     events: Queue[Event]
@@ -138,7 +142,8 @@ class Renderer:
             message = await self.messages.get()
 
             if isinstance(message, InternalMessage):
-                await self.handle_internal_message(message)
+                if message.verbosity <= self.verbosity:
+                    await self.handle_internal_message(message)
             elif isinstance(message, CommandMessage):
                 await self.handle_command_message(message)
 
@@ -193,7 +198,11 @@ class LogRenderer(Renderer):
     def live(self) -> Live:
         return Live(
             console=self.console,
-            renderable=StatusTable(loop=get_running_loop(), status_bars=self.status_bars),
+            renderable=StatusTable(
+                loop=get_running_loop(),
+                status_bars=self.status_bars,
+                show_task_status=self.verbosity.is_debug,
+            ),
             auto_refresh=True,
             refresh_per_second=10,
             transient=True,
@@ -302,28 +311,34 @@ class LogRenderer(Renderer):
 class StatusTable:
     loop: AbstractEventLoop
     status_bars: Dict[Command, Progress]
+    show_task_status: bool
 
     def __rich__(self) -> ConsoleRenderable:
         table = Table.grid(expand=False, padding=(0, 1))
         for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
             table.add_row(v)  # type: ignore
 
-        debug_table = Table.grid(expand=False, padding=(0, 1))
-        active_task = current_task(self.loop)
-        for task in sorted(all_tasks(self.loop), key=lambda task: task.get_name()):
-            frame = task.get_stack(limit=1)[0]
-            code = frame.f_code
+        tables = [table]
 
-            debug_table.add_row(
-                task.get_name(),
-                f"{Path(code.co_filename).name}:{frame.f_lineno}::{code.co_name}",
-                style=Style(dim=task is not active_task),
-            )
+        if self.show_task_status:
+            debug_table = Table.grid(expand=False, padding=(0, 1))
+            active_task = current_task(self.loop)
+            for task in sorted(all_tasks(self.loop), key=lambda task: task.get_name()):
+                frame = task.get_stack(limit=1)[0]
+                code = frame.f_code
+
+                debug_table.add_row(
+                    Text(task.get_name()),
+                    Text(f"{Path(code.co_filename).name}:{frame.f_lineno}::{code.co_name}"),
+                    style=Style(dim=task is not active_task),
+                )
+
+            tables.append(debug_table)
 
         ubertable = Table.grid(expand=True, padding=(0, 2))
-        ubertable.add_row(table, debug_table)
+        ubertable.add_row(*tables)
 
-        return Group(Rule(style="dim"), ubertable)
+        return Group(DIM_RULE, ubertable)
 
 
 RENDERERS: Mapping[Literal["null", "log"], Type[Renderer]] = {

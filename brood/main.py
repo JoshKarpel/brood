@@ -28,15 +28,15 @@ def run(
         envvar="BROOD_CONFIG",
         help="The path to the configuration file to execute.",
     ),
-    dry: bool = Option(
-        False,
-        help="If enabled, do not run actually run any commands.",
-    ),
     verbosity: Verbosity = Option(
         Verbosity.INFO,
         "-v",
         case_sensitive=False,
         help="Set the verbosity level for Brood's monitoring and error displays.",
+    ),
+    dry: bool = Option(
+        False,
+        help="If enabled, do not run actually run any commands.",
     ),
 ) -> None:
     """

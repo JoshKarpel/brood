@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from asyncio import FIRST_EXCEPTION, Queue, gather, get_running_loop, wait
+from asyncio import FIRST_EXCEPTION, Queue, create_task, gather, get_running_loop, wait
 from dataclasses import dataclass, field
 from functools import partial
 from typing import List, Mapping, Set
@@ -8,7 +8,7 @@ from typing import List, Mapping, Set
 from brood.command import Command, Event, EventType
 from brood.config import BroodConfig, CommandConfig, FailureMode, RestartConfig, WatchConfig
 from brood.fanout import Fanout
-from brood.message import InternalMessage, Message
+from brood.message import InternalMessage, Message, Verbosity
 from brood.utils import delay, drain_queue
 from brood.watch import FileWatcher, StartCommandHandler, WatchEvent
 
@@ -50,8 +50,10 @@ class Monitor:
 
         done, pending = await wait(
             (
-                self.handle_events(),
-                self.handle_watchers(),
+                create_task(self.handle_events(), name=f"{type(self).__name__} event handler"),
+                create_task(
+                    self.handle_file_events(), name=f"{type(self).__name__} file event handler"
+                ),
             ),
             return_when=FIRST_EXCEPTION,
         )
@@ -76,7 +78,8 @@ class Monitor:
 
                 await self.messages.put(
                     InternalMessage(
-                        f"Command exited with code {event.manager.exit_code}: {event.manager.config.command_string!r}"
+                        f"Command exited with code {event.manager.exit_code}: {event.manager.config.command_string!r}",
+                        verbosity=Verbosity.INFO,
                     )
                 )
 
@@ -98,7 +101,7 @@ class Monitor:
 
             self.events_consumer.task_done()
 
-    async def handle_watchers(self) -> None:
+    async def handle_file_events(self) -> None:
         watch_events: Queue[WatchEvent] = Queue()
 
         for config in self.config.commands:
@@ -107,6 +110,9 @@ class Monitor:
                 watcher = FileWatcher(config.starter, handler)
                 watcher.start()
                 self.watchers.append(watcher)
+
+        if not self.watchers:
+            return
 
         while True:
             # unique-ify on configs
@@ -131,7 +137,8 @@ class Monitor:
                 *(
                     self.messages.put(
                         InternalMessage(
-                            f"Path {event.src_path} was {event.event_type}, starting command: {config.command_string!r}"
+                            f"Path {event.src_path} was {event.event_type}, starting command: {config.command_string!r}",
+                            verbosity=Verbosity.INFO,
                         )
                     )
                     for config, event in starts.items()

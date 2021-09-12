@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0]
+
+### Added
+
+- At `debug` verbosity, a table of active `asyncio` tasks is displayed alongside the process monitor [#15](https://github.com/JoshKarpel/brood/pull/15).
+
+### Changed
+
+- Verbosity and debug options have been merged and expanded. Various verbosity levels are now available, the lowest being `debug` [#15](https://github.com/JoshKarpel/brood/pull/15).
+
+
 ## [0.2.0]
 
 ### Changed

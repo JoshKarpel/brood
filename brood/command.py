@@ -4,15 +4,16 @@ import os
 from asyncio import CancelledError, Task, create_subprocess_shell, create_task
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, unique
 from signal import SIGKILL, SIGTERM
 from typing import Optional
 
 from brood.config import CommandConfig
 from brood.fanout import Fanout
-from brood.message import CommandMessage, InternalMessage, Message
+from brood.message import CommandMessage, InternalMessage, Message, Verbosity
 
 
+@unique
 class EventType(Enum):
     Started = "started"
     Stopped = "stopped"
@@ -47,7 +48,11 @@ class Command:
         messages: Fanout[Message],
         width: int = 80,
     ) -> Command:
-        await messages.put(InternalMessage(f"Starting command: {config.command_string!r}"))
+        await messages.put(
+            InternalMessage(
+                f"Starting command: {config.command_string!r}", verbosity=Verbosity.INFO
+            )
+        )
 
         process = await create_subprocess_shell(
             config.command_string,
@@ -71,9 +76,9 @@ class Command:
 
     def __post_init__(self) -> None:
         self.reader = create_task(
-            self.read_output(), name=f"output reader for {self.config.command_string!r}"
+            self.read_output(), name=f"Read output for {self.config.command_string!r}"
         )
-        create_task(self.wait())
+        create_task(self.wait(), name=f"Wait for {self.config.command_string!r}")
 
     @property
     def exit_code(self) -> Optional[int]:
@@ -93,7 +98,9 @@ class Command:
         self.was_killed = True
 
         await self.messages.put(
-            InternalMessage(f"Terminating command: {self.config.command_string!r}")
+            InternalMessage(
+                f"Terminating command: {self.config.command_string!r}", verbosity=Verbosity.INFO
+            )
         )
 
         self._send_signal(SIGTERM)
@@ -104,7 +111,11 @@ class Command:
 
         self.was_killed = True
 
-        await self.messages.put(InternalMessage(f"Killing command: {self.config.command_string!r}"))
+        await self.messages.put(
+            InternalMessage(
+                f"Killing command: {self.config.command_string!r}", verbosity=Verbosity.INFO
+            )
+        )
 
         self._send_signal(SIGKILL)
 

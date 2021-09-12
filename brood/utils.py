@@ -4,12 +4,12 @@ from typing import Awaitable, Callable, List, Optional, TypeVar
 T = TypeVar("T")
 
 
-def delay(delay: float, fn: Callable[[], Awaitable[T]]) -> Task[T]:
+def delay(delay: float, fn: Callable[[], Awaitable[T]], name: Optional[str] = None) -> Task[T]:
     async def delayed() -> T:
         await sleep(delay)
         return await fn()
 
-    return create_task(delayed())
+    return create_task(delayed(), name=name)
 
 
 async def drain_queue(queue: Queue[T], *, buffer: Optional[float] = None) -> List[T]:

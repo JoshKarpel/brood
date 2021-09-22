@@ -15,7 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Verbosity and debug options have been merged and expanded. Various verbosity levels are now available, the lowest being `debug` [#15](https://github.com/JoshKarpel/brood/pull/15).
 
-
 ## [0.2.0]
 
 ### Changed

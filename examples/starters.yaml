@@ -21,4 +21,4 @@ commands:
 
 renderer:
   type: "log"
-  status_tracker: false
+  status_tracker: true

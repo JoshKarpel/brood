@@ -37,8 +37,6 @@ from brood.config import CommandConfig, LogRendererConfig, RendererConfig
 from brood.message import CommandMessage, InternalMessage, Message, Verbosity
 from brood.utils import delay
 
-DIM_RULE = Rule(style="dim")
-
 NULL_STYLE = Style.null()
 RE_ANSI_ESCAPE = re.compile(r"(\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))")
 ANSI_COLOR_TO_STYLE = {
@@ -203,10 +201,7 @@ class LogRenderer(Renderer):
                 status_bars=self.status_bars,
                 show_task_status=self.verbosity.is_debug,
             ),
-            auto_refresh=True,
-            refresh_per_second=10,
             transient=True,
-            screen=False,
         )
 
     async def mount(self) -> None:
@@ -214,6 +209,11 @@ class LogRenderer(Renderer):
             return
 
         self.live.start()
+
+        while True:
+            # TODO: I think the "leaving behind" is actually from the status area shrinking, and thus leaving behind messages
+            await asyncio.sleep(1 / 30)
+            self.live.refresh()
 
     async def unmount(self) -> None:
         for task in self.stop_tasks:
@@ -265,7 +265,7 @@ class LogRenderer(Renderer):
             )
         )
 
-    async def remove_status_bar(self, manager: Command, delay: int = 10) -> None:
+    async def remove_status_bar(self, manager: Command) -> None:
         self.status_bars.pop(manager, None)
 
     async def handle_internal_message(self, message: InternalMessage) -> None:
@@ -312,6 +312,19 @@ class StatusTable:
     loop: AbstractEventLoop
     status_bars: Dict[Command, Progress]
     show_task_status: bool
+    shutting_down: bool = False
+
+    @property
+    def rule(self) -> Rule:
+        running_commands = [command for command in self.status_bars if not command.has_exited]
+        num_running_commands = len(running_commands)
+        return Rule(
+            title=Text(
+                f"{num_running_commands} running",
+                style=Style(dim=True),
+            ),
+            style=Style(dim=True),
+        )
 
     def __rich__(self) -> ConsoleRenderable:
         table = Table.grid(expand=False, padding=(0, 1))
@@ -338,7 +351,7 @@ class StatusTable:
         ubertable = Table.grid(expand=True, padding=(0, 2))
         ubertable.add_row(*tables)
 
-        return Group(DIM_RULE, ubertable)
+        return Group(self.rule, ubertable)
 
 
 RENDERERS: Mapping[Literal["null", "log"], Type[Renderer]] = {

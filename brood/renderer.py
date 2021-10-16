@@ -32,8 +32,9 @@ from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
-from brood.command import Command, Event, EventType
+from brood.command import Command
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
+from brood.event import Event, EventType
 from brood.message import CommandMessage, InternalMessage, Message, Verbosity
 from brood.utils import delay
 
@@ -228,40 +229,40 @@ class LogRenderer(Renderer):
         p = Progress(
             SpinnerColumn(spinner_name=choice(DOTS), style=NULL_STYLE),
             RenderableColumn(Text("  ?", style="dim")),
-            RenderableColumn(Text(str(event.manager.process.pid).rjust(5), style="dim")),
+            RenderableColumn(Text(str(event.command.process.pid).rjust(5), style="dim")),
             TimeElapsedColumn(),
             RenderableColumn(
                 Text(
-                    event.manager.config.command_string,
-                    style=event.manager.config.prefix_style or self.config.prefix_style,
+                    event.command.config.command_string,
+                    style=event.command.config.prefix_style or self.config.prefix_style,
                 )
             ),
             console=self.console,
         )
         p.add_task("", total=1)
 
-        self.status_bars[event.manager] = p
+        self.status_bars[event.command] = p
 
     async def handle_stopped_event(self, event: Event) -> None:
         if not self.config.status_tracker:
             return
 
-        p = self.status_bars.get(event.manager, None)
+        p = self.status_bars.get(event.command, None)
         if p is None:
             return
 
-        p.columns[0].finished_text = GREEN_CHECK if event.manager.exit_code == 0 else RED_X  # type: ignore
+        p.columns[0].finished_text = GREEN_CHECK if event.command.exit_code == 0 else RED_X  # type: ignore
         p.columns[1].renderable = Text(  # type: ignore
-            str(event.manager.exit_code).rjust(3),
-            style="green" if event.manager.exit_code == 0 else "red",
+            str(event.command.exit_code).rjust(3),
+            style="green" if event.command.exit_code == 0 else "red",
         )
         p.update(TaskID(0), completed=1)
 
         self.stop_tasks.append(
             delay(
                 delay=10,
-                fn=partial(self.remove_status_bar, manager=event.manager),
-                name=f"Remove status entry for pid {event.manager.process.pid}",
+                fn=partial(self.remove_status_bar, manager=event.command),
+                name=f"Remove status entry for pid {event.command.process.pid}",
             )
         )
 

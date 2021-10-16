@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import traceback
 from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, CancelledError, create_task, sleep, wait
 from types import TracebackType
 from typing import Optional, Type
 
 from rich.console import Console
 
-from brood.command import Event
 from brood.config import BroodConfig
+from brood.event import Event
 from brood.fanout import Fanout
 from brood.message import InternalMessage, Message, Verbosity
 from brood.monitor import KillOthers, Monitor
@@ -88,7 +89,7 @@ class Executor:
             else:
                 await self.messages.put(
                     InternalMessage(
-                        f"Shutting down due to: {exc_type.__name__}: {exc_val}",
+                        f"Shutting down due to internal error.\n{traceback.format_exc()}",
                         verbosity=Verbosity.ERROR,
                     )
                 )

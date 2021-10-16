@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import shlex
+from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Set, Union
@@ -12,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from brood.constants import PACKAGE_NAME
 from brood.errors import UnknownFormat
+from brood.event import Event, EventType
 
 JSONDict = Dict[str, Any]
 
@@ -30,6 +33,9 @@ class BaseConfig(BaseModel):
 class OnceConfig(BaseConfig):
     type: Literal["once"] = "once"
 
+    def starter(self) -> Starter:
+        return OnceStarter()
+
 
 class RestartConfig(BaseConfig):
     type: Literal["restart"] = "restart"
@@ -37,6 +43,9 @@ class RestartConfig(BaseConfig):
     delay: float = Field(
         default=2, description="The delay before restarting the command after it exits.", ge=0
     )
+
+    def starter(self) -> Starter:
+        return RestartStarter()
 
 
 class WatchConfig(BaseConfig):
@@ -54,6 +63,24 @@ class WatchConfig(BaseConfig):
         default=False,
         description="If true, multiple instances of this command are allowed to run at once. If false, previous instances will be killed before starting a new one.",
     )
+
+    def starter(self) -> Starter:
+        return WatchStarter()
+
+
+class AfterCommand(BaseConfig):
+    command: str = Field(description="The 'name' of the command to run after.")
+
+
+class AfterConfig(BaseConfig):
+    type: Literal["dag"] = "after"
+
+    after: List[AfterCommand] = Field(
+        default_factory=list, description="This command will run after these commands."
+    )
+
+    def starter(self) -> Starter:
+        return AfterStarter(waiting_for={a.command for a in self.after})
 
 
 class CommandConfig(BaseConfig):
@@ -78,7 +105,7 @@ class CommandConfig(BaseConfig):
         description=f"The Rich style to apply to the prefix. Defaults to the renderer's 'prefix_style'.",
     )
 
-    starter: Union[OnceConfig, RestartConfig, WatchConfig] = RestartConfig()
+    starter: Union[OnceConfig, RestartConfig, WatchConfig, AfterConfig] = RestartConfig()
 
     @property
     def command_string(self) -> str:
@@ -208,3 +235,63 @@ class BroodConfig(BaseConfig):
 
     def yaml(self) -> str:
         return yaml.dump(self.dict())
+
+
+class Starter(metaclass=ABCMeta):
+    @abstractmethod
+    def can_start(self) -> bool:
+        raise NotImplementedError
+
+    def was_started(self) -> None:
+        pass
+
+    def handle_event(self, event: Event) -> None:
+        pass
+
+
+@dataclass
+class OnceStarter(Starter):
+    has_started: bool = False
+
+    def can_start(self) -> bool:
+        return not self.has_started
+
+    def was_started(self) -> None:
+        self.has_started = True
+
+
+@dataclass
+class RestartStarter(Starter):
+    has_started: bool = False
+
+    def can_start(self) -> bool:
+        return not self.has_started
+
+    def was_started(self) -> None:
+        self.has_started = True
+
+
+@dataclass
+class WatchStarter(Starter):
+    # TODO: move watching code in here somehow
+    def can_start(self) -> bool:
+        return False
+
+    def handle_event(self, event: Event) -> None:
+        pass
+
+
+@dataclass
+class AfterStarter(Starter):
+    waiting_for: Set[str]
+    done: Set[str] = field(default_factory=set)
+
+    def can_start(self) -> bool:
+        return self.waiting_for.issubset(self.done)
+
+    def was_started(self) -> None:
+        self.done.clear()
+
+    def handle_event(self, event: Event) -> None:
+        if event.type is EventType.Stopped and event.command.exit_code == 0:
+            self.done.add(event.command.config.name)

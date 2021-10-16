@@ -3,10 +3,19 @@ from __future__ import annotations
 from asyncio import FIRST_EXCEPTION, Queue, create_task, gather, get_running_loop, wait
 from dataclasses import dataclass, field
 from functools import partial
-from typing import List, Mapping, Set
+from typing import Dict, List, Mapping, Set
 
-from brood.command import Command, Event, EventType
-from brood.config import BroodConfig, CommandConfig, FailureMode, RestartConfig, WatchConfig
+from brood.command import Command
+from brood.config import (
+    AfterConfig,
+    BroodConfig,
+    CommandConfig,
+    FailureMode,
+    RestartConfig,
+    Starter,
+    WatchConfig,
+)
+from brood.event import Event, EventType
 from brood.fanout import Fanout
 from brood.message import InternalMessage, Message, Verbosity
 from brood.utils import delay, drain_queue
@@ -26,16 +35,27 @@ class Monitor:
 
     widths: Mapping[CommandConfig, int]
 
-    managers: Set[Command] = field(default_factory=set)
+    commands: Set[Command] = field(default_factory=set)
     watchers: List[FileWatcher] = field(default_factory=list)
 
+    starters: Dict[CommandConfig, Starter] = field(init=False)
     events_consumer: Queue[Event] = field(init=False)
 
     def __post_init__(self) -> None:
+        self.starters = {
+            command_config: command_config.starter.starter()
+            for command_config in self.config.commands
+        }
         self.events_consumer = self.events.consumer()
 
     async def start_commands(self) -> None:
-        await gather(*(self.start_command(command) for command in self.config.commands))
+        await gather(
+            *(
+                self.start_command(command)
+                for command in self.config.commands
+                if not isinstance(command.starter, AfterConfig)
+            )
+        )
 
     async def start_command(self, command_config: CommandConfig) -> None:
         await Command.start(
@@ -63,41 +83,55 @@ class Monitor:
 
     async def handle_events(self, drain: bool = False) -> None:
         while True:
-            if drain and len(self.managers) == 0 and self.events_consumer.qsize() == 0:
+            if drain and len(self.commands) == 0 and self.events_consumer.qsize() == 0:
                 return
 
             event = await self.events_consumer.get()
 
             if event.type is EventType.Started:
-                self.managers.add(event.manager)
+                self.commands.add(event.command)
             elif event.type is EventType.Stopped:
                 try:
-                    self.managers.remove(event.manager)
+                    self.commands.remove(event.command)
                 except KeyError:
                     return  # it's ok to get multiple stop events for the same manager, e.g., during shutdown
 
                 await self.messages.put(
                     InternalMessage(
-                        f"Command exited with code {event.manager.exit_code}: {event.manager.config.command_string!r}",
+                        f"Command exited with code {event.command.exit_code}: {event.command.config.command_string!r}",
                         verbosity=Verbosity.INFO,
                     )
                 )
 
                 if (
                     self.config.failure_mode == FailureMode.KILL_OTHERS
-                    and event.manager.exit_code != 0
-                    and not event.manager.was_killed
+                    and event.command.exit_code != 0
+                    and not event.command.was_killed
                 ):
-                    raise KillOthers(event.manager)
+                    raise KillOthers(event.command)
 
-                if isinstance(event.manager.config.starter, RestartConfig):
+            for command_config, starter in self.starters.items():
+                starter.handle_event(event)
+
+                if starter.can_start() and not any(
+                    command.config == command_config for command in self.commands
+                ):
+                    await self.messages.put(
+                        InternalMessage(
+                            f"Command {command_config.name!r} is ready to start via {command_config.starter}.",
+                            verbosity=Verbosity.INFO,
+                        )
+                    )
                     delay(
-                        event.manager.config.starter.delay,
+                        command_config.starter.delay
+                        if isinstance(command_config.starter, RestartConfig)
+                        else 0,
                         partial(
                             self.start_command,
-                            command_config=event.manager.config,
+                            command_config=command_config,
                         ),
                     )
+                    starter.was_started()
 
             self.events_consumer.task_done()
 
@@ -125,7 +159,7 @@ class Monitor:
                     isinstance(watch_event.command_config.starter, WatchConfig)
                     and not watch_event.command_config.starter.allow_multiple
                 ):
-                    for manager in self.managers:
+                    for manager in self.commands:
                         if manager.config is watch_event.command_config:
                             stops.add(manager)
 
@@ -154,7 +188,7 @@ class Monitor:
         await self.wait()
 
     async def wait(self) -> None:
-        await gather(*(manager.wait() for manager in self.managers))
+        await gather(*(manager.wait() for manager in self.commands))
 
         await self.handle_events(drain=True)
 
@@ -162,7 +196,7 @@ class Monitor:
             watcher.join()
 
     async def terminate(self) -> None:
-        await gather(*(manager.terminate() for manager in self.managers))
+        await gather(*(manager.terminate() for manager in self.commands))
 
         for watcher in self.watchers:
             watcher.stop()

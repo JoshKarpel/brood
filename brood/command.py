@@ -4,25 +4,13 @@ import os
 from asyncio import CancelledError, Task, create_subprocess_shell, create_task
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass, field
-from enum import Enum, unique
 from signal import SIGKILL, SIGTERM
 from typing import Optional
 
 from brood.config import CommandConfig
+from brood.event import Event, EventType
 from brood.fanout import Fanout
 from brood.message import CommandMessage, InternalMessage, Message, Verbosity
-
-
-@unique
-class EventType(Enum):
-    Started = "started"
-    Stopped = "stopped"
-
-
-@dataclass(frozen=True)
-class Event:
-    manager: Command
-    type: EventType
 
 
 @dataclass
@@ -62,7 +50,7 @@ class Command:
             preexec_fn=os.setsid,
         )
 
-        manager = cls(
+        command = cls(
             config=config,
             width=width,
             process=process,
@@ -70,15 +58,18 @@ class Command:
             messages=messages,
         )
 
-        await events.put(Event(manager=manager, type=EventType.Started))
+        await events.put(Event(command=command, type=EventType.Started))
 
-        return manager
+        return command
 
     def __post_init__(self) -> None:
         self.reader = create_task(
-            self.read_output(), name=f"Read output for {self.config.command_string!r}"
+            self.read_output(),
+            name=f"Read output for {self.config.command_string!r} (pid {self.process.pid})",
         )
-        create_task(self.wait(), name=f"Wait for {self.config.command_string!r}")
+        create_task(
+            self.wait(), name=f"Wait for {self.config.command_string!r} (pid {self.process.pid})"
+        )
 
     @property
     def exit_code(self) -> Optional[int]:
@@ -99,7 +90,8 @@ class Command:
 
         await self.messages.put(
             InternalMessage(
-                f"Terminating command: {self.config.command_string!r}", verbosity=Verbosity.INFO
+                f"Terminating command: {self.config.command_string!r} (pid {self.process.pid})",
+                verbosity=Verbosity.INFO,
             )
         )
 
@@ -113,7 +105,8 @@ class Command:
 
         await self.messages.put(
             InternalMessage(
-                f"Killing command: {self.config.command_string!r}", verbosity=Verbosity.INFO
+                f"Killing command: {self.config.command_string!r} (pid {self.process.pid})",
+                verbosity=Verbosity.INFO,
             )
         )
 
@@ -128,7 +121,7 @@ class Command:
             except CancelledError:
                 pass
 
-        await self.events.put(Event(manager=self, type=EventType.Stopped))
+        await self.events.put(Event(command=self, type=EventType.Stopped))
 
         return self
 

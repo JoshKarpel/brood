@@ -3,9 +3,10 @@ from typing import Tuple
 
 import pytest
 
-from brood.command import Command, Event
+from brood.command import Command
 from brood.config import CommandConfig, OnceConfig
 from brood.constants import ON_WINDOWS
+from brood.event import Event
 from brood.fanout import Fanout
 from brood.message import CommandMessage, Message
 from brood.utils import drain_queue

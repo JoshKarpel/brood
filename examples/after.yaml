@@ -1,0 +1,11 @@
+commands:
+  - name: "restart"
+    command: "echo hi && sleep 3"
+    prefix_style: "green"
+  - name: "after"
+    command: "echo after && sleep 1"
+    prefix_style: "red"
+    starter:
+      type: "dag"
+      after:
+        - command: "restart"

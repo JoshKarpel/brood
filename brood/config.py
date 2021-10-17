@@ -28,6 +28,9 @@ class BaseConfig(BaseModel):
 class OnceConfig(BaseConfig):
     type: Literal["once"] = "once"
 
+    def pretty(self) -> str:
+        return "running once"
+
 
 class RestartConfig(BaseConfig):
     type: Literal["restart"] = "restart"
@@ -35,6 +38,9 @@ class RestartConfig(BaseConfig):
     delay: float = Field(
         default=2, description="The delay before restarting the command after it exits.", ge=0
     )
+
+    def pretty(self) -> str:
+        return f"restarting after {self.delay:.6f} seconds"
 
 
 class WatchConfig(BaseConfig):
@@ -48,10 +54,8 @@ class WatchConfig(BaseConfig):
         description="If true, poll for changes instead of waiting for change notifications.",
     )
 
-    allow_multiple: bool = Field(
-        default=False,
-        description="If true, multiple instances of this command are allowed to run at once. If false, previous instances will be killed before starting a new one.",
-    )
+    def pretty(self) -> str:
+        return f"watching {', '.join(self.paths)}"
 
 
 class CommandConfig(BaseConfig):

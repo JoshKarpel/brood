@@ -16,7 +16,7 @@ from asyncio import (
 )
 from dataclasses import dataclass, field
 from datetime import timedelta
-from functools import cached_property, partial
+from functools import cached_property
 from pathlib import Path
 from random import choice
 from shutil import get_terminal_size
@@ -24,6 +24,7 @@ from typing import Dict, List, Literal, Mapping, Type
 
 from colorama import Fore
 from colorama import Style as CStyle
+from rich.align import Align
 from rich.console import Console, ConsoleRenderable, Group
 from rich.live import Live
 from rich.progress import Progress, ProgressColumn, RenderableColumn, SpinnerColumn, Task, TaskID
@@ -32,10 +33,11 @@ from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
-from brood.command import Command, Event, EventType
+from brood.command import Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
 from brood.message import CommandMessage, InternalMessage, Message, Verbosity
-from brood.utils import delay
+
+DIM_RULE = Rule(style="dim")
 
 NULL_STYLE = Style.null()
 RE_ANSI_ESCAPE = re.compile(r"(\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))")
@@ -181,7 +183,7 @@ class TimeElapsedColumn(ProgressColumn):
 class LogRenderer(Renderer):
     config: LogRendererConfig
 
-    status_bars: Dict[Command, Progress] = field(default_factory=dict)
+    status_bars: Dict[CommandConfig, Progress] = field(default_factory=dict)
     stop_tasks: List[asyncio.Task[None]] = field(default_factory=list)
 
     def prefix_width(self, command_config: CommandConfig) -> int:
@@ -211,14 +213,10 @@ class LogRenderer(Renderer):
         self.live.start()
 
         while True:
-            # TODO: I think the "leaving behind" is actually from the status area shrinking, and thus leaving behind messages
-            await asyncio.sleep(1 / 30)
+            await asyncio.sleep(1 / 20)
             self.live.refresh()
 
     async def unmount(self) -> None:
-        for task in self.stop_tasks:
-            task.cancel()
-
         self.live.stop()
 
     async def handle_started_event(self, event: Event) -> None:
@@ -236,17 +234,27 @@ class LogRenderer(Renderer):
                     style=event.manager.config.prefix_style or self.config.prefix_style,
                 )
             ),
+            RenderableColumn(
+                Align.right(
+                    Text(
+                        f"  {event.manager.config.starter.pretty()}",
+                        style=Style.parse(self.config.prefix_style).chain(
+                            Style(dim=True, italic=True)
+                        ),
+                    )
+                )
+            ),
             console=self.console,
         )
         p.add_task("", total=1)
 
-        self.status_bars[event.manager] = p
+        self.status_bars[event.manager.config] = p
 
     async def handle_stopped_event(self, event: Event) -> None:
         if not self.config.status_tracker:
             return
 
-        p = self.status_bars.get(event.manager, None)
+        p = self.status_bars.get(event.manager.config, None)
         if p is None:
             return
 
@@ -256,17 +264,6 @@ class LogRenderer(Renderer):
             style="green" if event.manager.exit_code == 0 else "red",
         )
         p.update(TaskID(0), completed=1)
-
-        self.stop_tasks.append(
-            delay(
-                delay=10,
-                fn=partial(self.remove_status_bar, manager=event.manager),
-                name=f"Remove status entry for pid {event.manager.process.pid}",
-            )
-        )
-
-    async def remove_status_bar(self, manager: Command) -> None:
-        self.status_bars.pop(manager, None)
 
     async def handle_internal_message(self, message: InternalMessage) -> None:
         self.console.print(self.render_internal_message(message), soft_wrap=True)
@@ -310,25 +307,12 @@ class LogRenderer(Renderer):
 @dataclass(frozen=True)
 class StatusTable:
     loop: AbstractEventLoop
-    status_bars: Dict[Command, Progress]
+    status_bars: Dict[CommandConfig, Progress]
     show_task_status: bool
-    shutting_down: bool = False
-
-    @property
-    def rule(self) -> Rule:
-        running_commands = [command for command in self.status_bars if not command.has_exited]
-        num_running_commands = len(running_commands)
-        return Rule(
-            title=Text(
-                f"{num_running_commands} running",
-                style=Style(dim=True),
-            ),
-            style=Style(dim=True),
-        )
 
     def __rich__(self) -> ConsoleRenderable:
         table = Table.grid(expand=False, padding=(0, 1))
-        for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
+        for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].name):
             table.add_row(v)  # type: ignore
 
         tables = [table]
@@ -351,7 +335,7 @@ class StatusTable:
         ubertable = Table.grid(expand=True, padding=(0, 2))
         ubertable.add_row(*tables)
 
-        return Group(self.rule, ubertable)
+        return Group(DIM_RULE, ubertable)
 
 
 RENDERERS: Mapping[Literal["null", "log"], Type[Renderer]] = {

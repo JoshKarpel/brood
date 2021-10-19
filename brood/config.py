@@ -40,7 +40,7 @@ class RestartConfig(BaseConfig):
     )
 
     def pretty(self) -> str:
-        return f"restarting after {self.delay:.6f} seconds"
+        return f"restarting after {self.delay} seconds"
 
 
 class WatchConfig(BaseConfig):

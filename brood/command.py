@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from asyncio import CancelledError, Task, create_subprocess_shell, create_task
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass, field
@@ -33,6 +34,8 @@ class Command:
     messages: Fanout[Message] = field(repr=False)
 
     process: Process = field(repr=False)
+    start_time: float
+    stop_time: Optional[float] = None
 
     width: int = 80
 
@@ -66,6 +69,7 @@ class Command:
             config=config,
             width=width,
             process=process,
+            start_time=time.time(),
             events=events,
             messages=messages,
         )
@@ -87,6 +91,13 @@ class Command:
     @property
     def has_exited(self) -> bool:
         return self.exit_code is not None
+
+    @property
+    def elapsed_time(self) -> float:
+        if self.stop_time is None:
+            return time.time() - self.start_time
+        else:
+            return self.stop_time - self.start_time
 
     def _send_signal(self, signal: int) -> None:
         os.killpg(os.getpgid(self.process.pid), signal)
@@ -121,6 +132,7 @@ class Command:
 
     async def wait(self) -> Command:
         await self.process.wait()
+        self.stop_time = time.time()
 
         if self.reader:
             try:

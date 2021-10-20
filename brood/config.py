@@ -55,7 +55,7 @@ class WatchConfig(BaseConfig):
     )
 
     def pretty(self) -> str:
-        return f"watching {', '.join(self.paths)}"
+        return f"{'polling' if self.poll else 'watching'} for changes in {', '.join(self.paths)}"
 
 
 class CommandConfig(BaseConfig):

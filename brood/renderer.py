@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import shutil
+import time
 from asyncio import (
     ALL_COMPLETED,
     FIRST_EXCEPTION,
@@ -14,26 +15,25 @@ from asyncio import (
     get_running_loop,
     wait,
 )
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
-from random import choice
 from shutil import get_terminal_size
-from typing import Dict, List, Literal, Mapping, Type
+from typing import Dict, Literal, Mapping, Optional, Type
 
+import psutil
 from colorama import Fore
 from colorama import Style as CStyle
-from rich.align import Align
 from rich.console import Console, ConsoleRenderable, Group
 from rich.live import Live
-from rich.progress import Progress, ProgressColumn, RenderableColumn, SpinnerColumn, Task, TaskID
 from rich.rule import Rule
+from rich.spinner import Spinner
 from rich.style import Style
-from rich.table import Table
+from rich.table import Column, Table
 from rich.text import Text
 
-from brood.command import Event, EventType
+from brood.command import Command, Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
 from brood.message import CommandMessage, InternalMessage, Message, Verbosity
 
@@ -79,9 +79,10 @@ def ansi_to_text(s: str) -> Text:
     return text
 
 
-@dataclass(frozen=True)
+@dataclass
 class Renderer:
     config: RendererConfig
+    commands: Dict[CommandConfig, Optional[Command]]
     console: Console
 
     verbosity: Verbosity
@@ -129,7 +130,7 @@ class Renderer:
             self.events.task_done()
 
     async def handle_started_event(self, event: Event) -> None:
-        pass
+        self.commands[event.manager.config] = event.manager
 
     async def handle_stopped_event(self, event: Event) -> None:
         pass
@@ -156,35 +157,19 @@ class Renderer:
         pass
 
 
-@dataclass(frozen=True)
+@dataclass
 class NullRenderer(Renderer):
     def available_process_width(self, command_config: CommandConfig) -> int:
         return shutil.get_terminal_size().columns
 
 
-DOTS = ["dots"] + [f"dots{n}" for n in range(2, 12)]
 GREEN_CHECK = Text("✔", style="green")
 RED_X = Text("✘", style="red")
 
 
-class TimeElapsedColumn(ProgressColumn):
-    """Renders time elapsed."""
-
-    def render(self, task: "Task") -> Text:
-        """Show time remaining."""
-        elapsed = task.finished_time if task.finished else task.elapsed
-        if elapsed is None:
-            return Text("-:--:--", style="dim")
-        delta = timedelta(seconds=int(elapsed))
-        return Text(str(delta), style="dim")
-
-
-@dataclass(frozen=True)
+@dataclass
 class LogRenderer(Renderer):
     config: LogRendererConfig
-
-    status_bars: Dict[CommandConfig, Progress] = field(default_factory=dict)
-    stop_tasks: List[asyncio.Task[None]] = field(default_factory=list)
 
     def prefix_width(self, command_config: CommandConfig) -> int:
         return self.render_command_prefix(
@@ -200,7 +185,8 @@ class LogRenderer(Renderer):
             console=self.console,
             renderable=StatusTable(
                 loop=get_running_loop(),
-                status_bars=self.status_bars,
+                config=self.config,
+                commands=self.commands,
                 show_task_status=self.verbosity.is_debug,
             ),
             transient=True,
@@ -218,52 +204,6 @@ class LogRenderer(Renderer):
 
     async def unmount(self) -> None:
         self.live.stop()
-
-    async def handle_started_event(self, event: Event) -> None:
-        if not self.config.status_tracker:
-            return
-
-        p = Progress(
-            SpinnerColumn(spinner_name=choice(DOTS), style=NULL_STYLE),
-            RenderableColumn(Text("  ?", style="dim")),
-            RenderableColumn(Text(str(event.manager.process.pid).rjust(5), style="dim")),
-            TimeElapsedColumn(),
-            RenderableColumn(
-                Text(
-                    event.manager.config.command_string,
-                    style=event.manager.config.prefix_style or self.config.prefix_style,
-                )
-            ),
-            RenderableColumn(
-                Align.right(
-                    Text(
-                        f"  {event.manager.config.starter.pretty()}",
-                        style=Style.parse(self.config.prefix_style).chain(
-                            Style(dim=True, italic=True)
-                        ),
-                    )
-                )
-            ),
-            console=self.console,
-        )
-        p.add_task("", total=1)
-
-        self.status_bars[event.manager.config] = p
-
-    async def handle_stopped_event(self, event: Event) -> None:
-        if not self.config.status_tracker:
-            return
-
-        p = self.status_bars.get(event.manager.config, None)
-        if p is None:
-            return
-
-        p.columns[0].finished_text = GREEN_CHECK if event.manager.exit_code == 0 else RED_X  # type: ignore
-        p.columns[1].renderable = Text(  # type: ignore
-            str(event.manager.exit_code).rjust(3),
-            style="green" if event.manager.exit_code == 0 else "red",
-        )
-        p.update(TaskID(0), completed=1)
 
     async def handle_internal_message(self, message: InternalMessage) -> None:
         self.console.print(self.render_internal_message(message), soft_wrap=True)
@@ -307,13 +247,69 @@ class LogRenderer(Renderer):
 @dataclass(frozen=True)
 class StatusTable:
     loop: AbstractEventLoop
-    status_bars: Dict[CommandConfig, Progress]
+    config: LogRendererConfig
+    commands: Dict[CommandConfig, Optional[Command]]
     show_task_status: bool
 
     def __rich__(self) -> ConsoleRenderable:
-        table = Table.grid(expand=False, padding=(0, 1))
-        for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].name):
-            table.add_row(v)  # type: ignore
+        table = Table(
+            Column(""),
+            Column("$?", justify="right", width=3),
+            Column("pid", justify="right", width=5),
+            Column("ΔT", justify="right"),
+            Column("Command", justify="left"),
+            Column("Starter", justify="left"),
+            expand=False,
+            padding=(0, 1),
+            show_edge=False,
+            box=None,
+            header_style=Style(bold=True),
+        )
+        for config, command in self.commands.items():
+            if command:
+                try:
+                    p = psutil.Process(command.process.pid).as_dict()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    p = {}
+                if command.has_exited:
+                    if command.exit_code == 0:
+                        spinner = GREEN_CHECK
+                        exit_style = Style(color="green")
+                    else:
+                        spinner = RED_X
+                        exit_style = Style(color="red")
+                else:
+                    s = Spinner("dots")
+                    s.start_time = command.start_time
+                    spinner = s.render(time.time())
+                    exit_style = NULL_STYLE
+                elapsed = Text(str(timedelta(seconds=int(command.elapsed_time))))
+            else:
+                spinner = Text("-", style="dim")
+                elapsed = Text("-:--:--", style="dim")
+                exit_style = Style(dim=True)
+                p = {}
+
+            table.add_row(
+                spinner,
+                Text(
+                    str(command.exit_code if command and command.exit_code is not None else "?"),
+                    style=exit_style,
+                ),
+                Text(
+                    str(command.process.pid if command else "-"),
+                    style="dim" if not command else None,
+                ),
+                elapsed,
+                Text(
+                    config.command_string,
+                    style=config.prefix_style or self.config.prefix_style,
+                ),
+                Text(
+                    config.starter.pretty(),
+                    style=Style.parse(self.config.prefix_style).chain(Style(dim=True, italic=True)),
+                ),
+            )
 
         tables = [table]
 

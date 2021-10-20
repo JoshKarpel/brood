@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import os
 import time
-from asyncio import CancelledError, Task, create_subprocess_shell, create_task
+from asyncio import CancelledError, Task, create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass, field
 from enum import Enum, unique
+from functools import cached_property
 from signal import SIGKILL, SIGTERM
-from typing import Optional
+from typing import Any, Dict, Optional
+
+import psutil
 
 from brood.config import CommandConfig
 from brood.fanout import Fanout
@@ -37,11 +40,15 @@ class Command:
     start_time: float
     stop_time: Optional[float] = None
 
+    # TODO: replace with TypedDict
+    stats: Dict[str, Any] = field(repr=False, default_factory=dict)
+
     width: int = 80
 
     was_killed: bool = False
 
     reader: Optional[Task[None]] = None
+    statser: Optional[Task[None]] = None
 
     @classmethod
     async def start(
@@ -82,7 +89,14 @@ class Command:
         self.reader = create_task(
             self.read_output(), name=f"Read output for {self.config.command_string!r}"
         )
+        self.statser = create_task(
+            self.get_stats(), name=f"Collect stats for {self.config.command_string!r}"
+        )
         create_task(self.wait(), name=f"Wait for {self.config.command_string!r}")
+
+    @property
+    def pid(self) -> int:
+        return self.process.pid
 
     @property
     def exit_code(self) -> Optional[int]:
@@ -140,6 +154,9 @@ class Command:
             except CancelledError:
                 pass
 
+        if self.statser:
+            self.statser.cancel()
+
         await self.events.put(Event(manager=self, type=EventType.Stopped))
 
         return self
@@ -160,5 +177,24 @@ class Command:
                 )
             )
 
+    @cached_property
+    def ps(self) -> Optional[psutil.Process]:
+        try:
+            return psutil.Process(self.pid).children()[0]
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, IndexError):
+            return None
+
+    async def get_stats(self) -> None:
+        while True:
+            if self.has_exited:
+                break
+
+            p = self.ps
+            if p is None:
+                break
+            else:
+                self.stats = p.as_dict()
+            await sleep(2)
+
     def __hash__(self) -> int:
-        return hash((self.__class__, self.config, self.process.pid))
+        return hash((self.__class__, self.config, self.pid))

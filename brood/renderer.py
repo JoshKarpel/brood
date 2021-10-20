@@ -22,7 +22,6 @@ from pathlib import Path
 from shutil import get_terminal_size
 from typing import Dict, Literal, Mapping, Optional, Type
 
-import psutil
 from colorama import Fore
 from colorama import Style as CStyle
 from rich.console import Console, ConsoleRenderable, Group
@@ -257,6 +256,8 @@ class StatusTable:
             Column("$?", justify="right", width=3),
             Column("pid", justify="right", width=5),
             Column("ΔT", justify="right"),
+            Column("CPU", justify="right"),
+            Column("MEM", justify="right"),
             Column("Command", justify="left"),
             Column("Starter", justify="left"),
             expand=False,
@@ -267,10 +268,6 @@ class StatusTable:
         )
         for config, command in self.commands.items():
             if command:
-                try:
-                    p = psutil.Process(command.process.pid).as_dict()
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    p = {}
                 if command.has_exited:
                     if command.exit_code == 0:
                         spinner = GREEN_CHECK
@@ -284,23 +281,37 @@ class StatusTable:
                     spinner = s.render(time.time())
                     exit_style = NULL_STYLE
                 elapsed = Text(str(timedelta(seconds=int(command.elapsed_time))))
+
+                mem = command.stats.get("memory_full_info")
+                if mem is None:
+                    m = "-"
+                else:
+                    m = f"{mem.uss / (1024**2):.0f} MB"
             else:
                 spinner = Text("-", style="dim")
                 elapsed = Text("-:--:--", style="dim")
                 exit_style = Style(dim=True)
-                p = {}
+                m = "-"
 
             table.add_row(
                 spinner,
                 Text(
-                    str(command.exit_code if command and command.exit_code is not None else "?"),
+                    str(command.exit_code if command and command.has_exited else "?"),
                     style=exit_style,
                 ),
                 Text(
                     str(command.process.pid if command else "-"),
-                    style="dim" if not command else None,
+                    style=None if command and not command.has_exited else "dim",
                 ),
                 elapsed,
+                Text(
+                    f"{command.stats.get('cpu_percent', 0) if command else 0:>4.1f}%",
+                    style=None if command and not command.has_exited else "dim",
+                ),
+                Text(
+                    f"{m}",
+                    style=None if command and not command.has_exited else "dim",
+                ),
                 Text(
                     config.command_string,
                     style=config.prefix_style or self.config.prefix_style,

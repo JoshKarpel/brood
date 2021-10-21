@@ -296,7 +296,7 @@ class StatusTable:
             table.add_row(
                 spinner,
                 Text(
-                    str(command.exit_code if command and command.has_exited else "?"),
+                    str(command.exit_code if command and command.has_exited else "-"),
                     style=exit_style,
                 ),
                 Text(
@@ -305,7 +305,7 @@ class StatusTable:
                 ),
                 elapsed,
                 Text(
-                    f"{command.stats.get('cpu_percent', 0) if command else 0:>4.1f}%",
+                    f"{command.stats.get('cpu_percent', 0):>4.1f}%" if command else "-",
                     style=None if command and not command.has_exited else "dim",
                 ),
                 Text(

@@ -24,7 +24,7 @@ from typing import Dict, Literal, Mapping, Optional, Type
 
 from colorama import Fore
 from colorama import Style as CStyle
-from rich.console import Console, ConsoleRenderable, Group
+from rich.console import Console, ConsoleRenderable, Group, RenderableType
 from rich.live import Live
 from rich.rule import Rule
 from rich.spinner import Spinner
@@ -36,7 +36,12 @@ from brood.command import Command, Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
 from brood.message import CommandMessage, InternalMessage, Message, Verbosity
 
-DIM_RULE = Rule(style="dim")
+GREEN_STYLE = Style(color="green")
+RED_STYLE = Style(color="red")
+DIM_STYLE = Style(dim=True)
+DIM_RULE = Rule(style=DIM_STYLE)
+DASH_TEXT = Text("-")
+TIME_DASH_TEXT = Text("-:--:--")
 
 NULL_STYLE = Style.null()
 RE_ANSI_ESCAPE = re.compile(r"(\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))")
@@ -142,7 +147,7 @@ class Renderer:
             message = await self.messages.get()
 
             if isinstance(message, InternalMessage):
-                if message.verbosity <= self.verbosity:
+                if message.verbosity >= self.verbosity:
                     await self.handle_internal_message(message)
             elif isinstance(message, CommandMessage):
                 await self.handle_command_message(message)
@@ -243,6 +248,12 @@ class LogRenderer(Renderer):
         )
 
 
+def make_spinner(start_time: float) -> RenderableType:
+    s = Spinner("dots")
+    s.start_time = start_time
+    return s.render(time.time())
+
+
 @dataclass(frozen=True)
 class StatusTable:
     loop: AbstractEventLoop
@@ -256,8 +267,8 @@ class StatusTable:
             Column("$?", justify="right", width=3),
             Column("pid", justify="right", width=5),
             Column("ΔT", justify="right"),
-            Column("CPU", justify="right"),
-            Column("MEM", justify="right"),
+            Column("CPU", justify="right", min_width=5),
+            Column("MEM", justify="right", min_width=5),
             Column("Command", justify="left"),
             Column("Starter", justify="left"),
             expand=False,
@@ -266,60 +277,52 @@ class StatusTable:
             box=None,
             header_style=Style(bold=True),
         )
+
         for config, command in self.commands.items():
             if command:
-                if command.has_exited:
-                    if command.exit_code == 0:
-                        spinner = GREEN_CHECK
-                        exit_style = Style(color="green")
-                    else:
-                        spinner = RED_X
-                        exit_style = Style(color="red")
-                else:
-                    s = Spinner("dots")
-                    s.start_time = command.start_time
-                    spinner = s.render(time.time())
-                    exit_style = NULL_STYLE
-                elapsed = Text(str(timedelta(seconds=int(command.elapsed_time))))
+                good_exit = command.exit_code == 0
 
-                mem = command.stats.get("memory_full_info")
-                if mem is None:
-                    m = "-"
-                else:
-                    m = f"{mem.uss / (1024**2):.0f} MB"
+                spinner_column = (
+                    (GREEN_CHECK if good_exit else RED_X)
+                    if command.has_exited
+                    else make_spinner(command.start_time)
+                )
+
+                exit_code_column = (
+                    Text(str(command.exit_code), style=GREEN_STYLE if good_exit else RED_STYLE)
+                    if command.has_exited
+                    else DASH_TEXT
+                )
+
+                pid_column = Text(str(command.process.pid))
+
+                elapsed_column = Text(str(timedelta(seconds=int(command.elapsed_time))))
+
+                cpu_percent = command.stats.get("cpu_percent")
+                cpu_column = Text(f"{cpu_percent:>4.1f}%") if cpu_percent else DASH_TEXT
+
+                memory_info = command.stats.get("memory_full_info")
+                memory_column = (
+                    Text(f"{memory_info.uss / (1024**2):.0f} MB") if memory_info else DASH_TEXT
+                )
             else:
-                spinner = Text("-", style="dim")
-                elapsed = Text("-:--:--", style="dim")
-                exit_style = Style(dim=True)
-                m = "-"
+                spinner_column = DASH_TEXT
+                exit_code_column = DASH_TEXT
+                pid_column = DASH_TEXT
+                elapsed_column = TIME_DASH_TEXT
+                cpu_column = DASH_TEXT
+                memory_column = DASH_TEXT
 
             table.add_row(
-                spinner,
-                Text(
-                    str(command.exit_code if command and command.has_exited else "-"),
-                    style=exit_style,
-                ),
-                Text(
-                    str(command.process.pid if command else "-"),
-                    style=None if command and not command.has_exited else "dim",
-                ),
-                elapsed,
-                Text(
-                    f"{command.stats.get('cpu_percent', 0):>4.1f}%" if command else "-",
-                    style=None if command and not command.has_exited else "dim",
-                ),
-                Text(
-                    f"{m}",
-                    style=None if command and not command.has_exited else "dim",
-                ),
-                Text(
-                    config.command_string,
-                    style=config.prefix_style or self.config.prefix_style,
-                ),
-                Text(
-                    config.starter.pretty(),
-                    style=Style.parse(self.config.prefix_style).chain(Style(dim=True, italic=True)),
-                ),
+                spinner_column,
+                exit_code_column,
+                pid_column,
+                elapsed_column,
+                cpu_column,
+                memory_column,
+                Text(config.command_string, style=config.prefix_style or self.config.prefix_style),
+                Text(config.starter.description, style=Style(dim=True, italic=True)),
+                style=Style(dim=command is None),
             )
 
         tables = [table]

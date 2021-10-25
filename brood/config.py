@@ -28,8 +28,17 @@ class BaseConfig(BaseModel):
 class OnceConfig(BaseConfig):
     type: Literal["once"] = "once"
 
-    def pretty(self) -> str:
+    @property
+    def description(self) -> str:
         return "running once"
+
+
+class ShutdownConfig(BaseConfig):
+    type: Literal["once"] = "once"
+
+    @property
+    def description(self) -> str:
+        return "running at shutdown"
 
 
 class RestartConfig(BaseConfig):
@@ -39,7 +48,8 @@ class RestartConfig(BaseConfig):
         default=2, description="The delay before restarting the command after it exits.", ge=0
     )
 
-    def pretty(self) -> str:
+    @property
+    def description(self) -> str:
         return f"restarting after {self.delay} seconds"
 
 
@@ -54,8 +64,9 @@ class WatchConfig(BaseConfig):
         description="If true, poll for changes instead of waiting for change notifications.",
     )
 
-    def pretty(self) -> str:
-        return f"{'polling' if self.poll else 'watching'} {' , '.join(self.paths)}"
+    @property
+    def description(self) -> str:
+        return f"{'polling' if self.poll else 'watching'} {', '.join(self.paths)}"
 
 
 class CommandConfig(BaseConfig):
@@ -94,7 +105,12 @@ class CommandConfig(BaseConfig):
         if self.shutdown is None:
             return None
 
-        return self.copy(update={"command": self.shutdown, "starter": OnceConfig()})
+        return self.copy(
+            update={
+                "command": self.shutdown,
+                "starter": ShutdownConfig(),
+            }
+        )
 
 
 class RendererConfig(BaseConfig):

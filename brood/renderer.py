@@ -38,6 +38,7 @@ from brood.message import CommandMessage, InternalMessage, Message, Verbosity
 
 GREEN_STYLE = Style(color="green")
 RED_STYLE = Style(color="red")
+BOLD_STYLE = Style(bold=True)
 DIM_STYLE = Style(dim=True)
 DIM_RULE = Rule(style=DIM_STYLE)
 DASH_TEXT = Text("-")
@@ -265,7 +266,7 @@ class StatusTable:
         table = Table(
             Column(""),
             Column("$?", justify="right", width=3),
-            Column("pid", justify="right", width=5),
+            Column("PID", justify="right", width=5),
             Column("ΔT", justify="right"),
             Column("CPU", justify="right", min_width=5),
             Column("MEM", justify="right", min_width=5),
@@ -275,7 +276,7 @@ class StatusTable:
             padding=(0, 1),
             show_edge=False,
             box=None,
-            header_style=Style(bold=True),
+            header_style=BOLD_STYLE,
         )
 
         for config, command in self.commands.items():

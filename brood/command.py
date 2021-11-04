@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import os
-from asyncio import CancelledError, Task, create_subprocess_shell, create_task
+import time
+from asyncio import CancelledError, Task, create_subprocess_shell, create_task, sleep
 from asyncio.subprocess import PIPE, STDOUT, Process
 from dataclasses import dataclass, field
 from enum import Enum, unique
+from functools import cached_property
 from signal import SIGKILL, SIGTERM
-from typing import Optional
+from typing import Any, Dict, Optional
+
+import psutil
 
 from brood.config import CommandConfig
 from brood.fanout import Fanout
@@ -33,12 +37,18 @@ class Command:
     messages: Fanout[Message] = field(repr=False)
 
     process: Process = field(repr=False)
+    start_time: float
+    stop_time: Optional[float] = None
+
+    # TODO: replace with TypedDict
+    stats: Dict[str, Any] = field(repr=False, default_factory=dict)
 
     width: int = 80
 
     was_killed: bool = False
 
     reader: Optional[Task[None]] = None
+    statser: Optional[Task[None]] = None
 
     @classmethod
     async def start(
@@ -66,6 +76,7 @@ class Command:
             config=config,
             width=width,
             process=process,
+            start_time=time.time(),
             events=events,
             messages=messages,
         )
@@ -78,7 +89,14 @@ class Command:
         self.reader = create_task(
             self.read_output(), name=f"Read output for {self.config.command_string!r}"
         )
+        self.statser = create_task(
+            self.get_stats(), name=f"Collect stats for {self.config.command_string!r}"
+        )
         create_task(self.wait(), name=f"Wait for {self.config.command_string!r}")
+
+    @property
+    def pid(self) -> int:
+        return self.process.pid
 
     @property
     def exit_code(self) -> Optional[int]:
@@ -87,6 +105,13 @@ class Command:
     @property
     def has_exited(self) -> bool:
         return self.exit_code is not None
+
+    @property
+    def elapsed_time(self) -> float:
+        if self.stop_time is None:
+            return time.time() - self.start_time
+        else:
+            return self.stop_time - self.start_time
 
     def _send_signal(self, signal: int) -> None:
         os.killpg(os.getpgid(self.process.pid), signal)
@@ -121,12 +146,16 @@ class Command:
 
     async def wait(self) -> Command:
         await self.process.wait()
+        self.stop_time = time.time()
 
         if self.reader:
             try:
                 await self.reader
             except CancelledError:
                 pass
+
+        if self.statser:
+            self.statser.cancel()
 
         await self.events.put(Event(manager=self, type=EventType.Stopped))
 
@@ -148,5 +177,24 @@ class Command:
                 )
             )
 
+    @cached_property
+    def ps(self) -> Optional[psutil.Process]:
+        try:
+            return psutil.Process(self.pid).children()[0]
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, IndexError):
+            return None
+
+    async def get_stats(self) -> None:
+        while True:
+            if self.has_exited:
+                break
+
+            p = self.ps
+            if p is None:
+                break
+            else:
+                self.stats = p.as_dict()
+            await sleep(2)
+
     def __hash__(self) -> int:
-        return hash((self.__class__, self.config, self.process.pid))
+        return hash((self.__class__, self.config, self.pid))

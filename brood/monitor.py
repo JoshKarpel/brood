@@ -121,10 +121,7 @@ class Monitor:
             for watch_event in await drain_queue(watch_events, buffer=1):
                 starts[watch_event.command_config] = watch_event.event
 
-                if (
-                    isinstance(watch_event.command_config.starter, WatchConfig)
-                    and not watch_event.command_config.starter.allow_multiple
-                ):
+                if isinstance(watch_event.command_config.starter, WatchConfig):
                     for manager in self.managers:
                         if manager.config is watch_event.command_config:
                             stops.add(manager)

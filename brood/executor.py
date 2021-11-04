@@ -26,6 +26,11 @@ class Executor:
 
         self.renderer = RENDERERS[config.renderer.type](
             config=self.config.renderer,
+            commands={
+                c: None
+                for c in config.commands
+                + list(filter(None, (c.shutdown_config for c in config.commands)))
+            },
             console=self.console,
             verbosity=self.verbosity,
             events=self.events.consumer(),

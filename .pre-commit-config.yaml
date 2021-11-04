@@ -24,8 +24,13 @@ repos:
       - id: python-no-eval
       - id: python-no-log-warn
       - id: python-use-type-annotations
+  - repo: https://github.com/hadialqattan/pycln
+    rev: v1.0.3
+    hooks:
+      - id: pycln
+        args: [--config=pyproject.toml]
   - repo: https://github.com/psf/black
-    rev: 21.9b0
+    rev: 21.10b0
     hooks:
       - id: black
   - repo: https://github.com/PyCQA/isort

@@ -5,7 +5,7 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Literal, Optional, Set, Union
+from typing import ClassVar, List, Literal, Optional, Set, Union
 
 import rtoml
 import yaml
@@ -15,8 +15,6 @@ from pydantic import BaseModel, Field
 from brood.constants import PACKAGE_NAME
 from brood.errors import UnknownFormat
 from brood.event import Event, EventType
-
-JSONDict = Dict[str, Any]
 
 
 class BaseConfig(BaseModel):
@@ -33,6 +31,21 @@ class BaseConfig(BaseModel):
 class OnceConfig(BaseConfig):
     type: Literal["once"] = "once"
 
+    @property
+    def description(self) -> str:
+        return "running once"
+
+    def starter(self) -> Starter:
+        return OnceStarter()
+
+
+class ShutdownConfig(BaseConfig):
+    type: Literal["once"] = "once"
+
+    @property
+    def description(self) -> str:
+        return "running at shutdown"
+
     def starter(self) -> Starter:
         return OnceStarter()
 
@@ -47,6 +60,10 @@ class RestartConfig(BaseConfig):
     def starter(self) -> Starter:
         return RestartStarter()
 
+    @property
+    def description(self) -> str:
+        return f"restarting after {self.delay} seconds"
+
 
 class WatchConfig(BaseConfig):
     type: Literal["watch"] = "watch"
@@ -59,10 +76,9 @@ class WatchConfig(BaseConfig):
         description="If true, poll for changes instead of waiting for change notifications.",
     )
 
-    allow_multiple: bool = Field(
-        default=False,
-        description="If true, multiple instances of this command are allowed to run at once. If false, previous instances will be killed before starting a new one.",
-    )
+    @property
+    def description(self) -> str:
+        return f"{'polling' if self.poll else 'watching'} {', '.join(self.paths)}"
 
     def starter(self) -> Starter:
         return WatchStarter()
@@ -73,11 +89,15 @@ class AfterCommand(BaseConfig):
 
 
 class AfterConfig(BaseConfig):
-    type: Literal["dag"] = "after"
+    type: Literal["after"] = "after"
 
     after: List[AfterCommand] = Field(
         default_factory=list, description="This command will run after these commands."
     )
+
+    @property
+    def description(self) -> str:
+        return f"running after {', '.join(a.command for a in self.after)}"
 
     def starter(self) -> Starter:
         return AfterStarter(waiting_for={a.command for a in self.after})
@@ -119,7 +139,12 @@ class CommandConfig(BaseConfig):
         if self.shutdown is None:
             return None
 
-        return self.copy(update={"command": self.shutdown, "starter": OnceConfig()})
+        return self.copy(
+            update={
+                "command": self.shutdown,
+                "starter": ShutdownConfig(),
+            }
+        )
 
 
 class RendererConfig(BaseConfig):

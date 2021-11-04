@@ -88,6 +88,13 @@ class Monitor:
 
             event = await self.events_consumer.get()
 
+            await self.messages.put(
+                InternalMessage(
+                    f"Got event for command '{event.command.config.name}' of type {event.type}",
+                    verbosity=Verbosity.DEBUG,
+                )
+            )
+
             if event.type is EventType.Started:
                 self.commands.add(event.command)
             elif event.type is EventType.Stopped:
@@ -113,15 +120,18 @@ class Monitor:
             for command_config, starter in self.starters.items():
                 starter.handle_event(event)
 
-                if starter.can_start() and not any(
-                    command.config == command_config for command in self.commands
-                ):
+                can_start = starter.can_start()
+                not_already_running = not any(
+                    command.config is command_config for command in self.commands
+                )
+                if can_start and not_already_running:
                     await self.messages.put(
                         InternalMessage(
-                            f"Command {command_config.name!r} is ready to start via {command_config.starter}.",
-                            verbosity=Verbosity.INFO,
+                            f"Command {command_config.name!r} is ready to start via {command_config.starter}",
+                            verbosity=Verbosity.DEBUG,
                         )
                     )
+                    starter.was_started()
                     delay(
                         command_config.starter.delay
                         if isinstance(command_config.starter, RestartConfig)
@@ -131,7 +141,13 @@ class Monitor:
                             command_config=command_config,
                         ),
                     )
-                    starter.was_started()
+                else:
+                    await self.messages.put(
+                        InternalMessage(
+                            f"Command {command_config.name!r} is not ready to start: {type(starter).__name__}.can_start() = {starter.can_start()} && not_already_running = {not_already_running})",
+                            verbosity=Verbosity.DEBUG,
+                        )
+                    )
 
             self.events_consumer.task_done()
 
@@ -155,10 +171,7 @@ class Monitor:
             for watch_event in await drain_queue(watch_events, buffer=1):
                 starts[watch_event.command_config] = watch_event.event
 
-                if (
-                    isinstance(watch_event.command_config.starter, WatchConfig)
-                    and not watch_event.command_config.starter.allow_multiple
-                ):
+                if isinstance(watch_event.command_config.starter, WatchConfig):
                     for manager in self.commands:
                         if manager.config is watch_event.command_config:
                             stops.add(manager)

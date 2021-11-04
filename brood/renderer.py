@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import shutil
+import time
 from asyncio import (
     ALL_COMPLETED,
     FIRST_EXCEPTION,
@@ -14,31 +15,35 @@ from asyncio import (
     get_running_loop,
     wait,
 )
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import timedelta
-from functools import cached_property, partial
+from functools import cached_property
 from pathlib import Path
-from random import choice
 from shutil import get_terminal_size
-from typing import Dict, List, Literal, Mapping, Type
+from typing import Dict, Literal, Mapping, Optional, Type
 
 from colorama import Fore
 from colorama import Style as CStyle
-from rich.console import Console, ConsoleRenderable, Group
+from rich.console import Console, ConsoleRenderable, Group, RenderableType
 from rich.live import Live
-from rich.progress import Progress, ProgressColumn, RenderableColumn, SpinnerColumn, Task, TaskID
 from rich.rule import Rule
+from rich.spinner import Spinner
 from rich.style import Style
-from rich.table import Table
+from rich.table import Column, Table
 from rich.text import Text
 
 from brood.command import Command
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig
 from brood.event import Event, EventType
 from brood.message import CommandMessage, InternalMessage, Message, Verbosity
-from brood.utils import delay
 
-DIM_RULE = Rule(style="dim")
+GREEN_STYLE = Style(color="green")
+RED_STYLE = Style(color="red")
+BOLD_STYLE = Style(bold=True)
+DIM_STYLE = Style(dim=True)
+DIM_RULE = Rule(style=DIM_STYLE)
+DASH_TEXT = Text("-")
+TIME_DASH_TEXT = Text("-:--:--")
 
 NULL_STYLE = Style.null()
 RE_ANSI_ESCAPE = re.compile(r"(\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))")
@@ -80,9 +85,10 @@ def ansi_to_text(s: str) -> Text:
     return text
 
 
-@dataclass(frozen=True)
+@dataclass
 class Renderer:
     config: RendererConfig
+    commands: Dict[CommandConfig, Optional[Command]]
     console: Console
 
     verbosity: Verbosity
@@ -130,7 +136,7 @@ class Renderer:
             self.events.task_done()
 
     async def handle_started_event(self, event: Event) -> None:
-        pass
+        self.commands[event.command.config] = event.command
 
     async def handle_stopped_event(self, event: Event) -> None:
         pass
@@ -143,7 +149,7 @@ class Renderer:
             message = await self.messages.get()
 
             if isinstance(message, InternalMessage):
-                if message.verbosity <= self.verbosity:
+                if message.verbosity >= self.verbosity:
                     await self.handle_internal_message(message)
             elif isinstance(message, CommandMessage):
                 await self.handle_command_message(message)
@@ -157,35 +163,19 @@ class Renderer:
         pass
 
 
-@dataclass(frozen=True)
+@dataclass
 class NullRenderer(Renderer):
     def available_process_width(self, command_config: CommandConfig) -> int:
         return shutil.get_terminal_size().columns
 
 
-DOTS = ["dots"] + [f"dots{n}" for n in range(2, 12)]
 GREEN_CHECK = Text("✔", style="green")
 RED_X = Text("✘", style="red")
 
 
-class TimeElapsedColumn(ProgressColumn):
-    """Renders time elapsed."""
-
-    def render(self, task: "Task") -> Text:
-        """Show time remaining."""
-        elapsed = task.finished_time if task.finished else task.elapsed
-        if elapsed is None:
-            return Text("-:--:--", style="dim")
-        delta = timedelta(seconds=int(elapsed))
-        return Text(str(delta), style="dim")
-
-
-@dataclass(frozen=True)
+@dataclass
 class LogRenderer(Renderer):
     config: LogRendererConfig
-
-    status_bars: Dict[Command, Progress] = field(default_factory=dict)
-    stop_tasks: List[asyncio.Task[None]] = field(default_factory=list)
 
     def prefix_width(self, command_config: CommandConfig) -> int:
         return self.render_command_prefix(
@@ -201,13 +191,11 @@ class LogRenderer(Renderer):
             console=self.console,
             renderable=StatusTable(
                 loop=get_running_loop(),
-                status_bars=self.status_bars,
+                config=self.config,
+                commands=self.commands,
                 show_task_status=self.verbosity.is_debug,
             ),
-            auto_refresh=True,
-            refresh_per_second=10,
             transient=True,
-            screen=False,
         )
 
     async def mount(self) -> None:
@@ -216,58 +204,12 @@ class LogRenderer(Renderer):
 
         self.live.start()
 
+        while True:
+            await asyncio.sleep(1 / 20)
+            self.live.refresh()
+
     async def unmount(self) -> None:
-        for task in self.stop_tasks:
-            task.cancel()
-
         self.live.stop()
-
-    async def handle_started_event(self, event: Event) -> None:
-        if not self.config.status_tracker:
-            return
-
-        p = Progress(
-            SpinnerColumn(spinner_name=choice(DOTS), style=NULL_STYLE),
-            RenderableColumn(Text("  ?", style="dim")),
-            RenderableColumn(Text(str(event.command.process.pid).rjust(5), style="dim")),
-            TimeElapsedColumn(),
-            RenderableColumn(
-                Text(
-                    event.command.config.command_string,
-                    style=event.command.config.prefix_style or self.config.prefix_style,
-                )
-            ),
-            console=self.console,
-        )
-        p.add_task("", total=1)
-
-        self.status_bars[event.command] = p
-
-    async def handle_stopped_event(self, event: Event) -> None:
-        if not self.config.status_tracker:
-            return
-
-        p = self.status_bars.get(event.command, None)
-        if p is None:
-            return
-
-        p.columns[0].finished_text = GREEN_CHECK if event.command.exit_code == 0 else RED_X  # type: ignore
-        p.columns[1].renderable = Text(  # type: ignore
-            str(event.command.exit_code).rjust(3),
-            style="green" if event.command.exit_code == 0 else "red",
-        )
-        p.update(TaskID(0), completed=1)
-
-        self.stop_tasks.append(
-            delay(
-                delay=10,
-                fn=partial(self.remove_status_bar, manager=event.command),
-                name=f"Remove status entry for pid {event.command.process.pid}",
-            )
-        )
-
-    async def remove_status_bar(self, manager: Command, delay: int = 10) -> None:
-        self.status_bars.pop(manager, None)
 
     async def handle_internal_message(self, message: InternalMessage) -> None:
         self.console.print(self.render_internal_message(message), soft_wrap=True)
@@ -308,16 +250,82 @@ class LogRenderer(Renderer):
         )
 
 
+def make_spinner(start_time: float) -> RenderableType:
+    s = Spinner("dots")
+    s.start_time = start_time
+    return s.render(time.time())
+
+
 @dataclass(frozen=True)
 class StatusTable:
     loop: AbstractEventLoop
-    status_bars: Dict[Command, Progress]
+    config: LogRendererConfig
+    commands: Dict[CommandConfig, Optional[Command]]
     show_task_status: bool
 
     def __rich__(self) -> ConsoleRenderable:
-        table = Table.grid(expand=False, padding=(0, 1))
-        for k, v in sorted(self.status_bars.items(), key=lambda kv: kv[0].process.pid):
-            table.add_row(v)  # type: ignore
+        table = Table(
+            Column(""),
+            Column("$?", justify="right", width=3),
+            Column("PID", justify="right", width=5),
+            Column("ΔT", justify="right"),
+            Column("CPU", justify="right", min_width=5),
+            Column("MEM", justify="right", min_width=5),
+            Column("Command", justify="left"),
+            Column("Starter", justify="left"),
+            expand=False,
+            padding=(0, 1),
+            show_edge=False,
+            box=None,
+            header_style=BOLD_STYLE,
+        )
+
+        for config, command in self.commands.items():
+            if command:
+                good_exit = command.exit_code == 0
+
+                spinner_column = (
+                    (GREEN_CHECK if good_exit else RED_X)
+                    if command.has_exited
+                    else make_spinner(command.start_time)
+                )
+
+                exit_code_column = (
+                    Text(str(command.exit_code), style=GREEN_STYLE if good_exit else RED_STYLE)
+                    if command.has_exited
+                    else DASH_TEXT
+                )
+
+                pid_column = Text(str(command.process.pid))
+
+                elapsed_column = Text(str(timedelta(seconds=int(command.elapsed_time))))
+
+                cpu_percent = command.stats.get("cpu_percent")
+                cpu_column = Text(f"{cpu_percent:>4.1f}%") if cpu_percent else DASH_TEXT
+
+                memory_info = command.stats.get("memory_full_info")
+                memory_column = (
+                    Text(f"{memory_info.uss / (1024**2):.0f} MB") if memory_info else DASH_TEXT
+                )
+            else:
+                spinner_column = DASH_TEXT
+                exit_code_column = DASH_TEXT
+                pid_column = DASH_TEXT
+                elapsed_column = TIME_DASH_TEXT
+                cpu_column = DASH_TEXT
+                memory_column = DASH_TEXT
+
+            table.add_row(
+                spinner_column,
+                exit_code_column,
+                pid_column,
+                elapsed_column,
+                cpu_column,
+                memory_column,
+                Text(config.command_string, style=config.prefix_style or self.config.prefix_style),
+                Text(config.starter.description, style=Style(dim=True, italic=True)),
+                style=Style(dim=command is None),
+            )
 
         tables = [table]
 

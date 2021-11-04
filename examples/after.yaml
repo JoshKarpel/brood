@@ -6,6 +6,11 @@ commands:
     command: "echo after && sleep 1"
     prefix_style: "red"
     starter:
-      type: "dag"
+      type: "after"
       after:
         - command: "restart"
+  - name: "once"
+    command: "echo once && sleep 10"
+    prefix_style: "yellow"
+    starter:
+      type: "once"

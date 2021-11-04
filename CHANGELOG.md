@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
 ## [0.4.0]
 
 ### Changed
@@ -14,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The verbosity level control was inverted, but isn't anymore [#22](https://github.com/JoshKarpel/brood/pull/22).
+
 
 ## [0.3.0]
 
@@ -37,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Command output can no longer be given an overall style via configuration [#12](https://github.com/JoshKarpel/brood/pull/12).
+
 
 ## [0.1.0]
 

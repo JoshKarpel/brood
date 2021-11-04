@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from asyncio import Queue, QueueEmpty, Task, create_task, sleep
 from typing import Awaitable, Callable, List, Optional, TypeVar
 

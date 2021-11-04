@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import os
 import sys
-from importlib import metadata
+
+import importlib_metadata as metadata
 
 PACKAGE_NAME = "brood"
 __version__ = metadata.version(PACKAGE_NAME)

@@ -23,7 +23,7 @@ classifiers = [
 include = ["py.typed"]
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "^3.8"
 rich = "^10.9.0"
 typer = "^0.3.2"
 pydantic = "^1.8.2"
@@ -34,6 +34,7 @@ rtoml = "^0.7.0"
 gitignore-parser = "^0.0.8"
 GitPython = "^3.1.20"
 psutil = "^5.8.0"
+importlib-metadata = "^4.8.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
@@ -44,6 +45,7 @@ hypothesis = "^6.17.2"
 mypy = "^0.910"
 pytest-cov = "^2.12.1"
 alt-pytest-asyncio = "^0.5.4"
+typing-extensions = "^3.10.0"
 
 [tool.poetry.scripts]
 brood = 'brood.main:app'

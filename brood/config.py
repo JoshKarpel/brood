@@ -3,12 +3,13 @@ from __future__ import annotations
 import shlex
 from enum import Enum
 from pathlib import Path
-from typing import ClassVar, List, Literal, Optional, Set, Union
+from typing import ClassVar, List, Optional, Set, Union
 
 import rtoml
 import yaml
 from identify import identify
 from pydantic import BaseModel, Field
+from typing_extensions import Literal
 
 from brood.constants import PACKAGE_NAME
 from brood.errors import UnknownFormat

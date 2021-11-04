@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from asyncio import Queue
 from typing import Tuple
 
@@ -20,7 +22,7 @@ def once_config(command: str) -> CommandConfig:
     )
 
 
-PackedManagerFixtureOutput = Tuple[Command, Queue[Event], Queue[Message]]
+PackedManagerFixtureOutput = Tuple[Command, "Queue[Event]", "Queue[Message]"]
 
 
 @pytest.fixture

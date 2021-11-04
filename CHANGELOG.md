@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support for Python 3.8 [#23](https://github.com/JoshKarpel/brood/pull/23).
 - At `debug` verbosity, a table of active `asyncio` tasks is displayed alongside the process monitor [#15](https://github.com/JoshKarpel/brood/pull/15).
 
 ### Changed

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from asyncio import FIRST_COMPLETED, FIRST_EXCEPTION, CancelledError, create_task, sleep, wait
+from traceback import format_exc
 from types import TracebackType
 from typing import Optional, Type
 
@@ -93,7 +94,7 @@ class Executor:
             else:
                 await self.messages.put(
                     InternalMessage(
-                        f"Shutting down due to: {exc_type.__name__}: {exc_val}",
+                        f"Shutting down due to: {exc_type.__name__}: {exc_val}\n{''.join(format_exc())}",
                         verbosity=Verbosity.ERROR,
                     )
                 )

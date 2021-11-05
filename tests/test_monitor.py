@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from asyncio import Queue, create_task, sleep
 
 from brood.utils import drain_queue

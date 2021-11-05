@@ -20,7 +20,7 @@ from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
 from shutil import get_terminal_size
-from typing import Dict, Literal, Mapping, Optional, Type
+from typing import Dict, Mapping, Optional, Type
 
 from colorama import Fore
 from colorama import Style as CStyle
@@ -31,6 +31,7 @@ from rich.spinner import Spinner
 from rich.style import Style
 from rich.table import Column, Table
 from rich.text import Text
+from typing_extensions import Literal
 
 from brood.command import Command, Event, EventType
 from brood.config import CommandConfig, LogRendererConfig, RendererConfig

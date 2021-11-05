@@ -6,25 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.4.0]
-
-### Changed
-
-- The process status table now shows much richer information about running processes [#22](https://github.com/JoshKarpel/brood/pull/22).
-
-### Fixed
-
-- The verbosity level control was inverted, but isn't anymore [#22](https://github.com/JoshKarpel/brood/pull/22).
-
-
 ## [0.3.0]
 
 ### Added
 
+- Support for Python 3.8 [#23](https://github.com/JoshKarpel/brood/pull/23).
 - At `debug` verbosity, a table of active `asyncio` tasks is displayed alongside the process monitor [#15](https://github.com/JoshKarpel/brood/pull/15).
 
 ### Changed
 
+- The process status table now shows much richer information about running processes [#22](https://github.com/JoshKarpel/brood/pull/22).
 - Verbosity and debug options have been merged and expanded. Various verbosity levels are now available, the lowest being `debug` [#15](https://github.com/JoshKarpel/brood/pull/15).
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from asyncio import AbstractEventLoop, Queue
 from dataclasses import dataclass, field
-from functools import cache
+from functools import lru_cache
 from pathlib import Path
 from types import TracebackType
 from typing import Callable, ContextManager, Optional, Type
@@ -85,13 +85,13 @@ class StartCommandHandler(FileSystemEventHandler):
         return hash((type(self), id(self)))
 
 
-@cache
+@lru_cache(maxsize=None)
 def get_git_root(path: Path) -> Path:
     git_repo = git.Repo(str(path), search_parent_directories=True)
     git_root = git_repo.git.rev_parse("--show-toplevel")
     return Path(git_root)
 
 
-@cache
+@lru_cache(maxsize=None)
 def get_ignorer(path: Path) -> Callable[[str], bool]:
     return parse_gitignore(str(path))

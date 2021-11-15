@@ -3,7 +3,7 @@ from __future__ import annotations
 import shlex
 from enum import Enum
 from pathlib import Path
-from typing import ClassVar, List, Optional, Set, Union
+from typing import List, Optional, Set, Union
 
 import rtoml
 import yaml
@@ -159,6 +159,8 @@ class FailureMode(str, Enum):
 
 ConfigFormat = Literal["json", "toml", "yaml"]
 
+FORMATS: Set[ConfigFormat] = {"json", "toml", "yaml"}
+
 
 class BroodConfig(BaseConfig):
     failure_mode: FailureMode = Field(
@@ -171,15 +173,13 @@ class BroodConfig(BaseConfig):
         default=LogRendererConfig(), description="The renderer to use."
     )
 
-    FORMATS: ClassVar[Set[ConfigFormat]] = {"json", "toml", "yaml"}
-
     class Config:
         use_enum_values = True
 
     @classmethod
     def load(cls, path: Path) -> BroodConfig:
         tags = identify.tags_from_path(path)
-        intersection = tags & cls.FORMATS
+        intersection = tags & FORMATS
 
         if not intersection:
             raise UnknownFormat(f"Could not load config from {path}: unknown format.")
@@ -192,7 +192,7 @@ class BroodConfig(BaseConfig):
 
     def save(self, path: Path) -> None:
         tags = identify.tags_from_filename(path)
-        intersection = tags & self.FORMATS
+        intersection = tags & FORMATS
 
         if not intersection:
             raise UnknownFormat(f"Could not write config to {path}: unknown format.")

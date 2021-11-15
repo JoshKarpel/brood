@@ -5,20 +5,20 @@ from _pytest.tmpdir import TempPathFactory
 from hypothesis import given
 from hypothesis import strategies as st
 
-from brood.config import BroodConfig, CommandConfig, ConfigFormat
+from brood.config import FORMATS, BroodConfig, CommandConfig, ConfigFormat
 from brood.errors import UnknownFormat
 
 
 @given(config=st.builds(BroodConfig))
-@pytest.mark.parametrize("fmt", BroodConfig.FORMATS)
+@pytest.mark.parametrize("fmt", FORMATS)
 def test_to_and_from(config: BroodConfig, fmt: ConfigFormat) -> None:
     s = config.to_format(fmt)
     assert config.from_format(s, fmt) == config
 
 
 @given(config=st.builds(BroodConfig))
-@pytest.mark.parametrize("to_fmt", BroodConfig.FORMATS)
-@pytest.mark.parametrize("from_fmt", BroodConfig.FORMATS)
+@pytest.mark.parametrize("to_fmt", FORMATS)
+@pytest.mark.parametrize("from_fmt", FORMATS)
 def test_save_and_load(
     config: BroodConfig,
     to_fmt: ConfigFormat,
